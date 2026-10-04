@@ -954,8 +954,14 @@
   100% { transform: translate(0px, 0px)   rotate(0deg); }
 }
 .hand-card.trembling {
-  animation: cardTremble 10s ease-in-out infinite;
+  animation: cardTremble 3s ease-in-out infinite;
 }
+/* Разные фазы старта — карты дрожат не синхронно */
+.hand-card.trembling:nth-child(1) { animation-delay: -0.00s; }
+.hand-card.trembling:nth-child(2) { animation-delay: -0.15s; }
+.hand-card.trembling:nth-child(3) { animation-delay: -0.32s; }
+.hand-card.trembling:nth-child(4) { animation-delay: -0.48s; }
+.hand-card.trembling:nth-child(5) { animation-delay: -0.66s; }
 /* Наведение — карта перестаёт дрожать и поднимается как обычно:
    так удобнее целиться кликом */
 .hand-card.trembling:hover {
