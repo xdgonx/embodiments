@@ -2,14 +2,21 @@
 <html lang="ru">
 <head>
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=1024">
+	<meta name="viewport" content="width=1920, user-scalable=no, viewport-fit=cover">
 	<meta name="apple-mobile-web-app-capable" content="yes">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 	<meta name="apple-mobile-web-app-title" content="Игра">
   <title>Настольная игра — космос</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
+        html, body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: monospace;
+      width: 100vw;
+      height: 100vh;
+    }
     canvas { display: block; }
     #discard-left {
       position: fixed; top: 0; left: 0;
@@ -500,6 +507,18 @@
     .lbp-piece-options .piece-option.inactive {
       cursor: default;
       pointer-events: none;
+    }
+    /* Включаем hover только когда зажат Ctrl — иначе неактивные иконки
+       не должны ни ловить мышь, ни подсвечиваться */
+    body.ctrl-mode .lbp-piece-options .piece-option.inactive {
+      pointer-events: auto;
+    }
+    /* И отключаем визуальный hover-эффект у неактивных — они некликабельны.
+       :not(.selected) — чтобы выбранная иконка сохраняла свой transform
+       и не прыгала при переключении Ctrl. */
+    body.ctrl-mode .lbp-piece-options .piece-option.inactive:not(.selected):hover {
+      transform: none;
+      box-shadow: none;
     }
     .lbp-piece-options .piece-option.selected.inactive {
       border-color: #33dd55 !important;
@@ -1474,6 +1493,21 @@
 
     #toggle-extras { font-size: clamp(9px, 0.65vw, 11px); padding: 5px 12px; }
 
+    /* Затемнение экрана в режиме сброса — фокус на руке игрока.
+       Панели сброса/колод/плашка конца хода имеют z-index 10+ и остаются поверх. */
+    #discard-dim-overlay {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 9;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    #discard-dim-overlay.visible {
+      opacity: 0.88;
+    }
+
     /* Кнопка «Сбросить» под выбранной картой в режиме сброса.
        Визуально совпадает с .lbp-reveal-btn.discard-btn (оранжевая). */
     .discard-pick-btn {
@@ -1500,6 +1534,30 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.8), 0 0 16px rgba(255,136,0,0.7);
     }
     .discard-pick-btn.hidden { display: none; }
+
+    /* Серые напоминалки о зерцалах на поле — видны поверх затемнения в фазе сброса.
+       Визуально похожи на disabled-кнопку локации. */
+    .mirror-field-reminder {
+      position: fixed;
+      width:  round(clamp(26px, 2.8vw, 40px), 1px);
+      height: round(clamp(36px, 3.9vw, 56px), 1px);
+      margin-left: calc(round(clamp(26px, 2.8vw, 40px), 1px) / -2);
+      margin-top:  calc(round(clamp(36px, 3.9vw, 56px), 1px) / -2);
+      border-radius: 6px;
+      border: 2px solid #777;
+      background: #0a0a14;
+      overflow: hidden;
+      z-index: 13;
+      pointer-events: auto;
+      cursor: not-allowed;
+      display: none;
+      filter: grayscale(1) brightness(0.6);
+      box-shadow: 0 0 10px rgba(0,0,0,0.9), 0 4px 10px rgba(0,0,0,0.6);
+    }
+    .mirror-field-reminder.visible { display: block; }
+    .mirror-field-reminder img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
 
     #small-screen-notice {
       display: none;
@@ -1683,8 +1741,10 @@
   </div>
 
   <div id="location-bonuses"></div>
+  <div id="mirror-field-reminders"></div>
   <div id="reveal-cards-layer"></div>
 
+  <div id="discard-dim-overlay"></div>
   <button id="discard-pick-btn" class="discard-pick-btn hidden">Сбросить</button>
 
   <script type="importmap">
@@ -2048,12 +2108,21 @@
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000008);
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+        // Фиксированный виртуальный экран — игра всегда рисуется в этих пропорциях,
+    // независимо от реального разрешения устройства.
+    const VIRTUAL_W = 1920;
+    const VIRTUAL_H = 1080;
+
+    const camera = new THREE.PerspectiveCamera(50, VIRTUAL_W / VIRTUAL_H, 0.1, 2000);
     camera.position.set(0, 14, 9);
     camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(VIRTUAL_W, VIRTUAL_H);
+    // Канвас растягивается на весь реальный экран через CSS.
+    renderer.domElement.style.width = '100vw';
+    renderer.domElement.style.height = '100vh';
+    renderer.domElement.style.display = 'block';
     renderer.shadowMap.enabled = true;
     renderer.localClippingEnabled = true;
     document.body.appendChild(renderer.domElement);
@@ -3018,6 +3087,75 @@ function clearGroup(group) {
       });
     }
 
+    // === Серые напоминалки о зерцалах на поле ===
+    // Создаёт по одному DOM-элементу на каждый жетон с зерцалом,
+    // показывает их только для команды, чей сейчас ход, и только в фазе сброса.
+    const mirrorFieldReminderMap = new Map();
+
+    function updateMirrorFieldReminders() {
+      if (!mirrorFieldRemindersEl) return;
+
+      const side = currentTurn;
+      // Напоминалки видны только в активной фазе сброса.
+      // Как только кнопка залочилась (игрок сбросил карту) — исчезают.
+      const active = !!discardMode[side] && !discardLocked[side];
+
+      const wanted = new Set();
+      if (active) {
+        pieces.forEach(p => {
+          if (p.side === side && p.mirror) wanted.add(p.id);
+        });
+      }
+
+      for (const [id, el] of mirrorFieldReminderMap.entries()) {
+        if (!wanted.has(id)) {
+          el.remove();
+          mirrorFieldReminderMap.delete(id);
+        }
+      }
+
+      wanted.forEach(id => {
+        const piece = pieces.find(p => p.id === id);
+        if (!piece || !piece.mirror) return;
+                let el = mirrorFieldReminderMap.get(id);
+        if (!el) {
+          el = document.createElement('div');
+          el.className = 'mirror-field-reminder';
+          const img = document.createElement('img');
+          img.src = piece.mirror.imgPath;
+          img.onerror = () => img.remove();
+          el.appendChild(img);
+
+          // Форвардим движение мыши на канвас — чтобы работал CTRL-предпросмотр
+          // (pointer-events: auto перехватывает события, и они не долетают до canvas)
+          el.addEventListener('mousemove', (ev) => {
+            lastMouseX = ev.clientX;
+            lastMouseY = ev.clientY;
+            if (ctrlPressed) {
+              checkHoverAt(ev.clientX, ev.clientY);
+              updateTabletOverlay();
+              updateOverlay();
+            }
+          });
+          el.addEventListener('mouseleave', () => {
+            hoveredPiece = null; hoveredCaptain = null; hoveredBadgeCard = null;
+            updateTabletOverlay();
+            updateOverlay();
+          });
+          // Клики по напоминалке не должны уходить в 3D-сцену
+          el.addEventListener('click', (ev) => ev.stopPropagation());
+
+          mirrorFieldRemindersEl.appendChild(el);
+          mirrorFieldReminderMap.set(id, el);
+        } else {
+          const img = el.querySelector('img');
+		  const wanted = piece.mirror.imgPath;
+		  if (img && img.getAttribute('src') !== wanted) img.setAttribute('src', wanted);
+        }
+        el.classList.add('visible');
+      });
+    }
+
     function createSelectorRingTexture(colorHex) {
       const c = document.createElement('canvas');
       c.width = 256; c.height = 256;
@@ -3904,9 +4042,10 @@ function clearGroup(group) {
         titleEl.textContent = '';
       }
 
-      candidates.forEach(piece => {
+       candidates.forEach(piece => {
         const el = document.createElement('div');
         el.className = 'piece-option ' + (side === 'white' ? 'white' : 'black');
+        el.dataset.pieceId = piece.id;
         el.style.backgroundImage = `url('${piece.profile.sprite}')`;
         el.title = `${piece.name} — клетка ${piece.cellId}`;
 
@@ -4132,6 +4271,7 @@ function clearGroup(group) {
       container.innerHTML = '';
       const el = document.createElement('div');
       el.className = 'piece-option ' + (piece.side === 'white' ? 'white' : 'black') + ' selected inactive';
+      el.dataset.pieceId = piece.id;
       el.style.backgroundImage = `url('${piece.profile.sprite}')`;
       el.title = piece.name;
       container.appendChild(el);
@@ -4206,6 +4346,7 @@ function clearGroup(group) {
       // Атакующий — некликабельный, всегда выделен зелёным
       const attackerEl = document.createElement('div');
       attackerEl.className = 'piece-option ' + (selectedPiece.side === 'white' ? 'white' : 'black') + ' selected inactive';
+      attackerEl.dataset.pieceId = selectedPiece.id;
       attackerEl.style.backgroundImage = `url('${selectedPiece.profile.sprite}')`;
       attackerEl.title = selectedPiece.name;
       attackerContainer.appendChild(attackerEl);
@@ -4219,10 +4360,11 @@ function clearGroup(group) {
         ...targets.filter(t => t.side === selectedPiece.side),
       ];
 
-      sortedTargets.forEach(target => {
+       sortedTargets.forEach(target => {
         const el = document.createElement('div');
         el.className = 'piece-option ' + (target.side === 'white' ? 'white' : 'black');
         if (target === selectedAttackTarget) el.classList.add('selected');
+        el.dataset.pieceId = target.id;
         el.style.backgroundImage = `url('${target.profile.sprite}')`;
         el.title = `${target.name} — HP: ${target.hp}/${target.maxHp}`;
         el.addEventListener('click', (e) => {
@@ -4288,10 +4430,11 @@ function clearGroup(group) {
       if (!container || !selectedPiece) return;
       container.innerHTML = '';
       const targets = getMirrorTargets(selectedPiece);
-      targets.forEach(target => {
+       targets.forEach(target => {
         const el = document.createElement('div');
         el.className = 'piece-option ' + (target.side === 'white' ? 'white' : 'black');
         if (target === selectedMirrorTarget) el.classList.add('selected');
+        el.dataset.pieceId = target.id;
         el.style.backgroundImage = `url('${target.profile.sprite}')`;
         el.title = target.name;
         el.addEventListener('click', (e) => {
@@ -4354,6 +4497,7 @@ function clearGroup(group) {
       container.innerHTML = '';
       const el = document.createElement('div');
       el.className = 'piece-option ' + (piece.side === 'white' ? 'white' : 'black') + ' selected inactive';
+      el.dataset.pieceId = piece.id;
       el.style.backgroundImage = `url('${piece.profile.sprite}')`;
       el.title = piece.name;
       container.appendChild(el);
@@ -4768,29 +4912,40 @@ function clearGroup(group) {
           const btn = locationBonusButtons[side + '_' + locId];
           if (!btn) return;
 
-          let visible = false;
+          const inDiscardPhase = discardMode[side];
+          const locked        = discardLocked[side];
+
+          // «Естественная» доступность кнопки — без учёта фазы сброса.
+          // Именно это определяет, показана ли кнопка вообще.
+          const naturallyAvailable = (locId === 2)
+            ? (side === currentTurn
+                && !locationBonusUsed[side][2]
+                && !actionTakenThisTurn[side]
+                && hasBonusAdvantage(side, 2))
+            : (side === currentTurn
+                && !actionTakenThisTurn[side]
+                && !locationBonusUsed[side][locId]
+                && hasBonusAdvantage(side, locId));
+
+          let visible = naturallyAvailable;
           let enabled = true;
 
           if (debugShowAllBonuses) {
             visible = true;
             enabled = true;
-          } else if (locId === 2) {
-            const canShow = side === currentTurn
-              && !locationBonusUsed[side][2]
-              && !actionTakenThisTurn[side]
-              && !discardMode[side]
-              && !discardLocked[side]
-              && hasBonusAdvantage(side, 2);
-            visible = canShow;
-            enabled = canShow && cardState[side].deck.length > 0;
-          } else {
-            visible = side === currentTurn && isLocationBonusAvailable(side, locId);
-            if (locId === 4) {
-              enabled = cardState[side].discard.length > 0;
-            } else {
-              enabled = true;
-            }
           }
+
+          // Уточняем enabled по «естественным» условиям
+          if (locId === 2) {
+            enabled = visible && cardState[side].deck.length > 0;
+          } else if (locId === 4) {
+            enabled = visible && cardState[side].discard.length > 0;
+          }
+
+          // Фаза сброса НЕ залочена — кнопки видим, но серые
+          if (inDiscardPhase && !locked) enabled = false;
+          // Фаза сброса залочена (игрок уже что-то сбросил) — прячем совсем
+          if (locked) visible = false;
 
           const revealActive = revealState.active && revealState.side === side && locId === 2;
           if (revealActive) visible = true;
@@ -5034,6 +5189,8 @@ function clearGroup(group) {
     const deckOverlayContent = deckOverlayEl.querySelector('.deck-overlay-content');
 
     const discardPickBtnEl = document.getElementById('discard-pick-btn');
+    const discardDimOverlayEl = document.getElementById('discard-dim-overlay');
+    const mirrorFieldRemindersEl = document.getElementById('mirror-field-reminders');
 
     function showDeckOverlay(side) {
       const st = cardState[side];
@@ -5227,7 +5384,7 @@ function clearGroup(group) {
       return overlay.childElementCount > 0 ? overlay : null;
     }
 
-    function showTabletOverlay(piece) {
+        function showTabletOverlay(piece) {
       hideOverlay();
       tabletOverlayContent.innerHTML = '';
       tabletOverlayContent.classList.remove('white-team', 'black-team');
@@ -5243,10 +5400,13 @@ function clearGroup(group) {
 
       const wrapper = document.createElement('div');
       wrapper.className = 'tablet-wrapper';
+      // Скрываем обёртку, пока картинка не загрузится и сердечки не добавятся —
+      // иначе при переключении между жетонами видно, как сердечки «доезжают».
+      wrapper.style.visibility = 'hidden';
+
       const front = document.createElement('img');
       front.className = 'tablet-image';
       front.alt = piece.name + ' — планшет';
-      front.src = `tablets/${piece.id}_front.png`;
       front.onerror = () => {
         const fb = document.createElement('div');
         fb.className = 'tablet-fallback';
@@ -5257,11 +5417,20 @@ function clearGroup(group) {
         wrapper.replaceWith(fb);
       };
       wrapper.appendChild(front);
-      front.addEventListener('load', () => {
+
+      let tabletReady = false;
+      const onTabletReady = () => {
+        if (tabletReady) return;
+        tabletReady = true;
         wrapper.appendChild(buildHeartsOverlay(piece));
         const statsOverlay = buildStatsOverlay(piece);
         if (statsOverlay) wrapper.appendChild(statsOverlay);
-      });
+        wrapper.style.visibility = '';
+      };
+      front.addEventListener('load', onTabletReady, { once: true });
+      // Кэшированная картинка могла уже «догрузиться» до навешивания слушателя
+      if (front.complete && front.naturalWidth > 0) onTabletReady();
+      front.src = `tablets/${piece.id}_front.png`;
 
       if (piece.mirror) {
         const mini = document.createElement('div');
@@ -5381,6 +5550,12 @@ function clearGroup(group) {
       if (newHovered !== hoveredPiece) hoveredPiece = newHovered;
     }
 
+    // Глобальный трекер позиции мыши — обновляется всегда, даже поверх DOM-элементов
+    document.addEventListener('mousemove', (e) => {
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+    });
+
     let mouseMoveScheduled = false;
     let pendingMouseX = 0, pendingMouseY = 0;
     renderer.domElement.addEventListener('mousemove', (e) => {
@@ -5480,23 +5655,60 @@ function clearGroup(group) {
         updateLocationBonusButtons();
         console.log('Debug: все кнопки бонусов =', debugShowAllBonuses ? 'ПОКАЗАНЫ' : 'скрыты');
       }
-      if (e.key === 'Control' && !ctrlPressed) {
+            if (e.key === 'Control' && !ctrlPressed) {
         ctrlPressed = true;
-        updateOverlay();
+        document.body.classList.add('ctrl-mode');
         checkHoverAt(lastMouseX, lastMouseY);
+        // Если курсор уже над иконкой персонажа в плашке — приоритет у неё
+        const el = document.elementFromPoint(lastMouseX, lastMouseY);
+        const pieceEl = el && el.closest && el.closest('.piece-option[data-piece-id]');
+        if (pieceEl) {
+          const p = pieces.find(x => x.id === pieceEl.dataset.pieceId);
+          if (p) {
+            hoveredPiece = p;
+            hoveredCaptain = null;
+            hoveredBadgeCard = null;
+          }
+        }
         updateTabletOverlay();
         updateOverlay();
       }
     });
-    window.addEventListener('keyup', (e) => {
+        window.addEventListener('keyup', (e) => {
       if (e.key === 'Control' && ctrlPressed) {
         ctrlPressed = false;
+        document.body.classList.remove('ctrl-mode');
         updateOverlay();
         updateTabletOverlay();
       }
     });
-    window.addEventListener('blur', () => {
+
+    // Наведение на иконку персонажа в плашках с зажатым Ctrl —
+    // показывает планшет персонажа (как при наведении на жетон в 3D).
+    document.addEventListener('mouseover', (e) => {
+      if (!ctrlPressed) return;
+      const el = e.target.closest && e.target.closest('.piece-option[data-piece-id]');
+      if (!el) return;
+      const p = pieces.find(x => x.id === el.dataset.pieceId);
+      if (!p) return;
+      hoveredPiece = p;
+      hoveredCaptain = null;
+      hoveredBadgeCard = null;
+      updateTabletOverlay();
+      updateOverlay();
+    });
+    document.addEventListener('mouseout', (e) => {
+      const el = e.target.closest && e.target.closest('.piece-option[data-piece-id]');
+      if (!el) return;
+      if (hoveredPiece && hoveredPiece.id === el.dataset.pieceId) {
+        hoveredPiece = null;
+        updateTabletOverlay();
+        updateOverlay();
+      }
+    });
+        window.addEventListener('blur', () => {
       ctrlPressed = false;
+      document.body.classList.remove('ctrl-mode');
       hoveredCard = null; hoveredBadgeCard = null; hoveredTabletCard = null;
       hoveredPiece = null; hoveredCaptain = null;
       updateOverlay();
@@ -5628,6 +5840,11 @@ function clearGroup(group) {
     // Фаза сброса активна И в руке реально есть что сбрасывать
     titleEl.textContent = '⚠ Остались несброшенные карты';
     subEl.textContent = 'Выберите карту в руке, чтобы сбросить её.';
+  } else if (discardMode[side] && discardLocked[side]) {
+    // Фаза сброса завершена — всё, что могли, сбросили.
+    // В этом состоянии зерцало недоступно, поэтому про него не пишем.
+    titleEl.textContent = '✓ Все доступные действия совершены';
+    subEl.textContent = 'Завершите ход кнопкой «Завершить ход».';
   } else if (mirrorExists && noCardsToDiscard) {
     titleEl.textContent = '⚠ Остались карты в зерцале';
     subEl.textContent = 'Вы можете сыграть их если хотите или завершить ход.';
@@ -7277,6 +7494,11 @@ function clearGroup(group) {
         ? 'Фаза сброса — необратима'
         : (discardMode[side] ? 'Выйти из режима сброса' : 'Сбросить карты');
       updateEndTurnConfirmText();
+
+      // Затемнение экрана в фазе сброса — фокус на руке игрока
+      if (discardDimOverlayEl) {
+        discardDimOverlayEl.classList.toggle('visible', !!discardMode[side]);
+      }
     }
 	
 	    function updateDiscardPickButton() {
@@ -7397,6 +7619,7 @@ function clearGroup(group) {
       updateMirrorBadgesDimming();
       updateLocationBonusButtons();
       updateDiscardPickButton();
+      updateMirrorFieldReminders();
     }
 
     updateTurnUI();
@@ -7427,7 +7650,7 @@ function clearGroup(group) {
       stars.rotation.y = t * 0.01;
       floatGroup.position.y = Math.sin(t * 0.8) * 0.05;
 
-      pieces.forEach(p => {
+            pieces.forEach(p => {
         if (p.selector && p.selector.visible) {
           p.selector.rotation.z = t * 1.4;
           const pulse = 1.0 + Math.sin(t * 5) * 0.07;
@@ -7439,6 +7662,23 @@ function clearGroup(group) {
           p.bonus5Ring.scale.set(pulse, pulse, pulse);
         }
       });
+
+      // Позиционируем серые напоминалки о зерцалах над жетонами
+      if (mirrorFieldReminderMap.size > 0) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mirrorFieldReminderMap.forEach((el, id) => {
+          const piece = pieces.find(p => p.id === id);
+          if (!piece || !el.classList.contains('visible')) return;
+          const pos = piece.mesh.position.clone();
+          pos.y += MIRROR_BADGE_HEIGHT;
+          pos.z += MIRROR_BADGE_OFFSET_Z;
+          const vec = pos.project(camera);
+          const sx = (vec.x * 0.5 + 0.5) * rect.width + rect.left;
+          const sy = (-vec.y * 0.5 + 0.5) * rect.height + rect.top;
+          el.style.left = sx + 'px';
+          el.style.top  = sy + 'px';
+        });
+      }
 
       updateShimmer(t);
       updateSpinningHighlights(t);
@@ -7453,13 +7693,11 @@ function clearGroup(group) {
     animate();
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  // aspect фиксирован — просто пересчитываем позиции UI
   if (selectedCardData && selectedCardData.element) {
     showCardActions(selectedCardData.element, selectedCardData.card, selectedCardData.side);
   }
-  projectLocationBonusButtons();   // сам вызовет positionRevealCards, если нужно
+  projectLocationBonusButtons();
   updateDiscardPickButton();
 });
 
