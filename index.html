@@ -7246,11 +7246,10 @@ function clearGroup(group) {
       updateEndTurnConfirmText();
     }
 	
-	    function onDiscardCardClick(side, index, card) {
+    function onDiscardCardClick(side, index, card) {
       if (animating || gameOver) return;
       if (side !== currentTurn) return;
       if (!discardMode[side]) return;
-      if (discardLocked[side]) return;
       const st = cardState[side];
       if (st.hand.length <= 1) return;
 
