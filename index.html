@@ -1474,6 +1474,33 @@
 
     #toggle-extras { font-size: clamp(9px, 0.65vw, 11px); padding: 5px 12px; }
 
+    /* Кнопка «Сбросить» под выбранной картой в режиме сброса.
+       Визуально совпадает с .lbp-reveal-btn.discard-btn (оранжевая). */
+    .discard-pick-btn {
+      position: fixed;
+      z-index: 600;
+      padding: 4px 10px;
+      font-family: monospace;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      border-radius: 5px;
+      border: 1px solid #ff8800;
+      background: #1e1e2c;
+      color: #ffb055;
+      cursor: pointer;
+      user-select: none;
+      transform: translateX(-50%);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.75), 0 0 10px rgba(255,136,0,0.35);
+      transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+    }
+    .discard-pick-btn:hover {
+      background: #3a2200;
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.8), 0 0 16px rgba(255,136,0,0.7);
+    }
+    .discard-pick-btn.hidden { display: none; }
+
     #small-screen-notice {
       display: none;
       position: fixed; inset: 0;
@@ -1657,6 +1684,8 @@
 
   <div id="location-bonuses"></div>
   <div id="reveal-cards-layer"></div>
+
+  <button id="discard-pick-btn" class="discard-pick-btn hidden">Сбросить</button>
 
   <script type="importmap">
   { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -5013,6 +5042,8 @@ function clearGroup(group) {
     const deckOverlayEl = document.getElementById('deck-overlay');
     const deckOverlayContent = deckOverlayEl.querySelector('.deck-overlay-content');
 
+    const discardPickBtnEl = document.getElementById('discard-pick-btn');
+
     function showDeckOverlay(side) {
       const st = cardState[side];
       const cards = st.deck;
@@ -7254,6 +7285,47 @@ function clearGroup(group) {
       updateEndTurnConfirmText();
     }
 	
+	    function updateDiscardPickButton() {
+      if (!discardPickBtnEl) return;
+      const side = currentTurn;
+      const uid = discardPickUid[side];
+      if (!uid || !discardMode[side]) {
+        discardPickBtnEl.classList.add('hidden');
+        return;
+      }
+      const container = side === 'white' ? handWhiteSlots : handBlackSlots;
+      let cardEl = null;
+      Array.from(container.children).forEach(el => {
+        if (el.dataset.uid === uid) cardEl = el;
+      });
+      if (!cardEl) {
+        discardPickBtnEl.classList.add('hidden');
+        return;
+      }
+      const rect = cardEl.getBoundingClientRect();
+      discardPickBtnEl.classList.remove('hidden');
+      discardPickBtnEl.style.left = (rect.left + rect.width / 2) + 'px';
+      discardPickBtnEl.style.top  = (rect.bottom + 6) + 'px';
+    }
+	
+	    if (discardPickBtnEl) {
+      discardPickBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const side = currentTurn;
+        const uid = discardPickUid[side];
+        if (!uid) return;
+        if (!discardMode[side]) return;
+        if (animating || gameOver) return;
+        const st = cardState[side];
+        const idx = st.hand.findIndex(c => c.uid === uid);
+        if (idx < 0) return;
+        const card = st.hand[idx];
+        discardPickUid[side] = null;
+        discardCardFromHand(side, idx, card);
+      });
+    }
+
+	
     function onDiscardCardClick(side, index, card) {
       if (animating || gameOver) return;
       if (side !== currentTurn) return;
@@ -7330,6 +7402,7 @@ function clearGroup(group) {
       updateDiscardTriggerUI();
       updateMirrorBadgesDimming();
       updateLocationBonusButtons();
+      updateDiscardPickButton();
     }
 
     updateTurnUI();
@@ -7393,6 +7466,7 @@ window.addEventListener('resize', () => {
     showCardActions(selectedCardData.element, selectedCardData.card, selectedCardData.side);
   }
   projectLocationBonusButtons();   // сам вызовет positionRevealCards, если нужно
+  updateDiscardPickButton();
 });
 
     initPieces();
