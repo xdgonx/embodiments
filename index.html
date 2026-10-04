@@ -5665,6 +5665,14 @@ function clearGroup(group) {
     }
 
     document.addEventListener('click', (e) => {
+      // Клик мимо карты в руке — снимаем выделение под сброс
+      if (discardPickUid.white || discardPickUid.black) {
+        const hadPick = discardPickUid.white || discardPickUid.black;
+        discardPickUid.white = null;
+        discardPickUid.black = null;
+        if (hadPick && (discardMode.white || discardMode.black)) renderHands();
+      }
+
       if (!endTurnConfirmEl.classList.contains('hidden')) cancelEndTurnConfirm();
       if (pendingLocationBonus) {
         // Панель бонуса и плашка 2 локации — безопасные зоны:
