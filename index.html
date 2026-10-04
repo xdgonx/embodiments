@@ -2318,7 +2318,6 @@
 	function createFinalHighlightAt(x, z, {
 	  radius = 0.55, y = COIN_HEIGHT + 0.08, shape = 'circle',
 	  innerShape = null, innerColor = null, innerAlpha = 1.0, innerSizeFrac = 0.42,
-	  innerFill = true, innerThickness = 14,
 	} = {}) {
 	  const group = new THREE.Group();
 	  group.position.set(x, y, z);
@@ -2326,9 +2325,9 @@
 	  const baseTex = createShapeTexture(shape, FINAL_COLOR, FINAL_COLOR, {
 		fillAlpha: 0.38,
 		ringAlpha: 1.0,
-		ringWidth: 18,
+		ringWidth: 11,
 		underlayBlack: true,
-		innerShape, innerColor, innerAlpha, innerSizeFrac, innerFill, innerThickness,
+		innerShape, innerColor, innerAlpha, innerSizeFrac,
 	  });
       const baseMesh = new THREE.Mesh(
         new THREE.PlaneGeometry(radius * 2, radius * 2),
@@ -2555,14 +2554,13 @@ function clearGroup(group) {
 	  radius = 0.5, ringWidth = 0.08, y = COIN_HEIGHT + 0.012,
 	  shape = 'circle',
 	  innerShape = null, innerColor = null, innerAlpha = 1.0, innerSizeFrac = 0.42,
-	  innerFill = true, innerThickness = 14,
 	}) {
 	  const group = new THREE.Group();
 	  const tex = createShapeTexture(shape, color, colorRing ?? color, {
 		fillAlpha: opacity,
 		ringAlpha: ringOpacity,
 		ringWidth: Math.max(8, ringWidth * 256 * 0.9),
-		innerShape, innerColor, innerAlpha, innerSizeFrac, innerFill, innerThickness,
+		innerShape, innerColor, innerAlpha, innerSizeFrac,
 	  });
       const mesh = new THREE.Mesh(
         new THREE.PlaneGeometry(radius * 2, radius * 2),
@@ -3639,8 +3637,6 @@ function clearGroup(group) {
       if (b5pc) b5pc.classList.add('hidden');
       const b5po = document.getElementById('lbp-piece-options');
       if (b5po) b5po.innerHTML = '';
-      const b5ph = document.getElementById('lbp-piece-hint');
-      if (b5ph) b5ph.classList.add('hidden');
 	  
 	  hideBonus2Confirm();
     }
@@ -3866,16 +3862,24 @@ function clearGroup(group) {
       if (!bonus5State.active) return;
       if (bonus5State.phase !== 'pick-cell') return;
 
+      const hasTarget = (bonus5State.targetCell !== null);
       const targets = getLocation5Targets(bonus5State.side);
       targets.forEach(cellId => {
+        // Выбранную ячейку рисуем ниже — финальным маркером
+        if (hasTarget && cellId === bonus5State.targetCell) return;
         const p = getPoint(cellId);
         reachableGroup.add(createHighlightAt(p.x, p.z, {
-          color: 0x5a18a0, colorRing: 0x9a4fff, opacity: 0.7, ringOpacity: 0.9,
+          // Когда цель уже выбрана — все остальные ячейки серые с фиолетовой окантовкой,
+          // как у финальной фигуры. Пока цели нет — обычный фиолетовый «blob».
+          color:     hasTarget ? 0x18181c : 0x5a18a0,
+          colorRing: hasTarget ? 0x9a4fff : 0x9a4fff,
+          opacity:   hasTarget ? 0.65 : 0.7,
+          ringOpacity: hasTarget ? 0.95 : 0.9,
           radius: 0.52, ringWidth: 0.08, y: 0.07, shape: 'blob'
         }));
       });
 
-      if (bonus5State.targetCell !== null) {
+      if (hasTarget) {
         const p = getPoint(bonus5State.targetCell);
         plannedPathGroup.add(createFinalHighlightAt(p.x, p.z, { y: 0.15, shape: 'blob' }));
       }
@@ -4014,18 +4018,7 @@ function clearGroup(group) {
       if (!bonus5State.active) return;
       const title = locationBonusPanelEl.querySelector('.lbp-title');
       const sub   = locationBonusPanelEl.querySelector('.lbp-sub');
-      const hint  = document.getElementById('lbp-piece-hint');
       if (!title || !sub) return;
-
-      const cells = getLocation5PhysicalCells(bonus5State.side);
-      const candidates = pieces.filter(p => p.side === bonus5State.side && cells.includes(p.cellId));
-      const multi = candidates.length > 1;
-
-      // Подсказка внизу блока иконок — только в фазе 2/3 и когда персонажей несколько
-      if (hint) {
-        const showHint = multi && (bonus5State.phase === 'pick-cell');
-        hint.classList.toggle('hidden', !showHint);
-      }
 
       if (bonus5State.phase === 'pick-piece') {
         title.textContent = '🎁 Бонус пятой локации';
@@ -4465,8 +4458,6 @@ function clearGroup(group) {
       if (b5pc) b5pc.classList.add('hidden');
       const b5po = document.getElementById('lbp-piece-options');
       if (b5po) b5po.innerHTML = '';
-	  const b5ph = document.getElementById('lbp-piece-hint');
-      if (b5ph) b5ph.classList.add('hidden');
 
       pendingLocationBonus = { side, locId: 2 };
       bonus2ConfirmEl.classList.remove('hidden', 'white-turn', 'black-turn');
@@ -5855,11 +5846,10 @@ function clearGroup(group) {
         const pos = target.mesh.position;
         mirrorTargetsGroup.add(createHighlightAt(pos.x, pos.z, {
           color: 0x00ccbb, colorRing: 0x44ffee, opacity: 0.65, ringOpacity: 1.0,
-          radius: 0.60, ringWidth: 0.13, y: COIN_HEIGHT + 0.012, shape: 'square'
+          radius: 0.60, ringWidth: 0.07, y: COIN_HEIGHT + 0.012, shape: 'square'
         }));
       });
     }
-    function clearMirrorHighlights() { clearGroup(mirrorTargetsGroup); }
     function updateMirrorSelected() {
       clearGroup(mirrorSelectedGroup);
       if (!selectedMirrorTarget) return;
@@ -5889,10 +5879,6 @@ function clearGroup(group) {
         useDashes: false,
         animate: false,
       }));
-    }
-
-    function clearExploreHighlights() {
-      clearGroup(exploreTargetsGroup);
     }
 
     function updateExploreSelected() {
@@ -6008,31 +5994,40 @@ function clearGroup(group) {
       if (!selectedPiece) return;
       if (!pendingCard || pendingCard.mode !== 'move') return;
       const reachable = getReachableCells(selectedPiece);
+      const hasPath = plannedPath.length > 0;
+      const inPath  = new Set(plannedPath);
       reachable.forEach(cellId => {
+        if (inPath.has(cellId)) return; // эти круги рисует updatePlannedPathHighlights
         const p = getPoint(cellId);
         reachableGroup.add(createHighlightAt(p.x, p.z, {
-          color: 0x22cc44, colorRing: 0x88ff99, opacity: 0.65, ringOpacity: 0.95,
-          radius: 0.5, ringWidth: 0.08, y: 0.07, shape: 'circle'
+          color:     hasPath ? 0x18181c : 0x22cc44,   // серый, если маршрут уже есть; иначе светло-зелёный
+          colorRing: 0x88ff99,                         // окантовка всегда одна и та же
+          opacity: 0.65, ringOpacity: 0.95,
+          radius: 0.5, ringWidth: 0.08, y: 0.13, shape: 'circle'
         }));
       });
     }
     function updatePlannedPathHighlights() {
       clearGroup(plannedPathGroup);
-      if (plannedPath.length === 0) return;
+      if (plannedPath.length === 0) {
+        updateReachableHighlights();
+        return;
+      }
       plannedPath.forEach((cellId, i) => {
         const p = getPoint(cellId);
         const isLast = (i === plannedPath.length - 1);
         if (isLast) {
-           plannedPathGroup.add(createFinalHighlightAt(p.x, p.z, { y: 0.15, shape: 'circle' }));
+           plannedPathGroup.add(createFinalHighlightAt(p.x, p.z, { y: 0.13, shape: 'circle' }));
         } else {
           plannedPathGroup.add(createHighlightAt(p.x, p.z, {
-            color: 0x0a2a12, colorRing: 0x77ee99, opacity: 0.9, ringOpacity: 1.0,
-            radius: 0.3, ringWidth: 0.08, y: 0.13, shape: 'circle'
+            color: 0x22cc44, colorRing: 0x88ff99, opacity: 0.65, ringOpacity: 0.95,
+            radius: 0.5, ringWidth: 0.08, y: 0.13, shape: 'circle'
           }));
         }
       });
+      updateReachableHighlights();
     }
-    function clearPlannedPath() { plannedPath = []; clearGroup(plannedPathGroup); }
+
 	function updateAttackHighlights() {
 	  clearGroup(attackTargetsGroup);
 	  if (!selectedPiece || !pendingCard || pendingCard.mode !== 'attack') return;
@@ -6041,20 +6036,20 @@ function clearGroup(group) {
 		const cell = getPoint(target.cellId);
 		const isEnemy = target.side !== selectedPiece.side;
 		attackTargetsGroup.add(createHighlightAt(cell.x, cell.z, {
-		  color:     isEnemy ? 0xff7700 : 0x22cc44,
-		  colorRing: isEnemy ? 0xffbb44 : 0x66ff99,
+		  color:     isEnemy ? 0xff7700 : 0x1e88ff,
+		  colorRing: isEnemy ? 0xffbb44 : 0x8ccfff,
 		  opacity: 0.75, ringOpacity: 1.0,
 		  radius: isEnemy ? 0.62 : 0.60,
-		  ringWidth: 0.13, y: COIN_HEIGHT + 0.012,
+		  ringWidth: 0.07, y: COIN_HEIGHT + 0.012,
 		  shape: 'star5',                                 // большая звезда для всех
 		  innerShape: isEnemy ? 'star5' : 'circle',       // враг — звезда, союзник — кружок
-		  innerColor: 0xffffff,
+		  innerColor: isEnemy ? 0xffbb44 : 0x8ccfff,      // в цвет окантовки
 		  innerAlpha: 1.0,
 		  innerSizeFrac: isEnemy ? 0.28 : 0.20,
 		}));
 	  });
 	}
-    function clearAttackHighlights() { clearGroup(attackTargetsGroup); }
+
 	function updateAttackSelected() {
 	  clearGroup(attackSelectedGroup);
 	  if (!selectedAttackTarget) { stopHpBlink(); return; }
@@ -6064,7 +6059,6 @@ function clearGroup(group) {
 		y: COIN_HEIGHT + 0.08,
 		shape: 'star5',
 		innerShape: isEnemy ? 'star5' : 'circle',
-		innerColor: 0xffffff,
 		innerAlpha: 1.0,
 		innerSizeFrac: isEnemy ? 0.28 : 0.20,
 	  }));
@@ -7051,7 +7045,6 @@ function clearGroup(group) {
     // Переназначаем обработчик клика через onclick — так не накапливаются листенеры
     if (canDiscard) {
       el.onclick = (e) => { e.stopPropagation(); onDiscardCardClick(side, idx, card); };
-      const isPicked = discardPickUid[side] === card.uid;
       el.title = isPicked
         ? `${card.charName} — ${card.name} (клик ещё раз — сбросить)`
         : `${card.charName} — ${card.name} (клик — выбрать для сброса)`;
@@ -7090,7 +7083,8 @@ function clearGroup(group) {
       if (side !== currentTurn) return;
       if (animating || gameOver) return;
       if (discardMode[side]) return;
-      if (selectedCardData && selectedCardData.element === element) { resetAllSelections(); return; }
+      // Повторный клик по уже выбранной карте — ничего не делаем
+      if (selectedCardData && selectedCardData.element === element) return;
       if (selectedCardData || pendingCard || selectedPiece) resetAllSelections();
       selectedCardData = { side, index, element, card };
       element.classList.add('selected');
