@@ -4,18 +4,29 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=1920, user-scalable=no, viewport-fit=cover">
 	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="mobile-web-app-capable" content="yes">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 	<meta name="apple-mobile-web-app-title" content="Игра">
   <title>Настольная игра — космос</title>
   <style>
-    * { box-sizing: border-box; }
-        html, body {
+        * { box-sizing: border-box; }
+    html, body {
       margin: 0;
       overflow: hidden;
       background: #000;
       font-family: monospace;
       width: 100vw;
       height: 100vh;
+    }
+
+    /* Принудительный ландшафт: если телефон в портрете — поворачиваем всё на 90° */
+    @media (orientation: portrait) {
+      html, body {
+        width: 100vh;
+        height: 100vw;
+        transform-origin: top left;
+        transform: rotate(90deg) translateY(-100%);
+      }
     }
     canvas { display: block; }
     #discard-left {
@@ -5720,6 +5731,28 @@ function clearGroup(group) {
     }
 
     if (toggleExtrasBtn) toggleExtrasBtn.addEventListener('click', toggleExtras);
+
+    // Полноэкранный режим — прячет адресную строку и системный бар браузера.
+    // Запускается по первому тапу (браузеры требуют жест пользователя).
+    let fsRequested = false;
+    function tryEnterFullscreen() {
+      if (fsRequested) return;
+      fsRequested = true;
+      const el = document.documentElement;
+      const fn = el.requestFullscreen
+        || el.webkitRequestFullscreen
+        || el.mozRequestFullScreen
+        || el.msRequestFullscreen;
+      if (fn) {
+        try { fn.call(el); } catch (e) { /* некоторые браузеры отказывают без причины */ }
+      }
+      // Пытаемся залочить ориентацию в ландшафт (работает не везде)
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
+      }
+    }
+    document.addEventListener('touchstart', tryEnterFullscreen, { once: true });
+    document.addEventListener('click', tryEnterFullscreen, { once: true });
 
     function updateTurnUI() {
       turnPanel.classList.remove('white-turn', 'black-turn');
