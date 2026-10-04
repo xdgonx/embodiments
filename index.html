@@ -956,6 +956,19 @@
 .hand-card.trembling {
   animation: cardTremble 3s ease-in-out infinite;
 }
+/* Выбранная под сброс карта — зелёная рамка, не дрожит */
+.hand-card.discard-pick {
+  border-color: #33dd55 !important;
+  box-shadow: 0 0 20px rgba(51, 221, 85, 0.95), 0 12px 22px rgba(0,0,0,0.75) !important;
+  transform: translateY(-10px);
+  z-index: 6;
+}
+/* Наведение на выбранную карту — оставляем приподнятой, рамка та же */
+.hand-card.discard-pick:hover {
+  transform: translateY(-10px) scale(1.04);
+  border-color: #33dd55 !important;
+  box-shadow: 0 0 24px rgba(51, 221, 85, 1), 0 12px 22px rgba(0,0,0,0.8) !important;
+}
 /* Разные фазы старта — карты дрожат не синхронно */
 .hand-card.trembling:nth-child(1) { animation-delay: -0.00s; }
 .hand-card.trembling:nth-child(2) { animation-delay: -0.15s; }
@@ -2000,8 +2013,9 @@
 
     const might = { white: 9, black: 10 };
     let extrasVisible = true;
-    const discardMode   = { white: false, black: false };
-    const discardLocked = { white: false, black: false };
+    const discardMode    = { white: false, black: false };
+    const discardLocked  = { white: false, black: false };
+    const discardPickUid = { white: null,  black: null  };
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000008);
@@ -5527,6 +5541,7 @@ function clearGroup(group) {
       highlightUid[currentTurn] = null;
       discardMode[currentTurn] = false;
       discardLocked[currentTurn] = false;
+      discardPickUid[currentTurn] = null;
       actionTakenThisTurn[currentTurn] = false;
       locationBonusUsed[currentTurn] = makeBonusUsedMap();
       pendingLocationBonus = null;
@@ -6984,17 +6999,23 @@ function clearGroup(group) {
 
     // Обновляем классы, сохраняя .selected если эта карта сейчас выделена
     const isSelected = selectedCardData && selectedCardData.element === el;
+    const isPicked = inDiscard && discardPickUid[side] === card.uid;
     el.className = 'hand-card ' + (side === 'white' ? 'white-card' : 'black-card');
     if (card.variant === 'ult') el.classList.add('ult');
     if (isSelected) el.classList.add('selected');
+    if (isPicked) el.classList.add('discard-pick');
     if (!enabled) el.classList.add('disabled');
     // Тряска — всю фазу сброса (пульсирует / залочена), пока в руке есть что сбрасывать
-    if (inDiscard && st.hand.length > 1) el.classList.add('trembling');
+    // и пока карта не выбрана под сброс
+    if (inDiscard && st.hand.length > 1 && !isPicked) el.classList.add('trembling');
 
     // Переназначаем обработчик клика через onclick — так не накапливаются листенеры
     if (canDiscard) {
-      el.onclick = (e) => { e.stopPropagation(); discardCardFromHand(side, idx, card); };
-      el.title = `${card.charName} — ${card.name} (клик — сбросить)`;
+      el.onclick = (e) => { e.stopPropagation(); onDiscardCardClick(side, idx, card); };
+      const isPicked = discardPickUid[side] === card.uid;
+      el.title = isPicked
+        ? `${card.charName} — ${card.name} (клик ещё раз — сбросить)`
+        : `${card.charName} — ${card.name} (клик — выбрать для сброса)`;
     } else if (canPlay && warningShown) {
       el.onclick = (e) => {
         e.stopPropagation();
@@ -7224,6 +7245,25 @@ function clearGroup(group) {
         : (discardMode[side] ? 'Выйти из режима сброса' : 'Сбросить карты');
       updateEndTurnConfirmText();
     }
+	
+	    function onDiscardCardClick(side, index, card) {
+      if (animating || gameOver) return;
+      if (side !== currentTurn) return;
+      if (!discardMode[side]) return;
+      if (discardLocked[side]) return;
+      const st = cardState[side];
+      if (st.hand.length <= 1) return;
+
+      if (discardPickUid[side] === card.uid) {
+        // Повторный клик по уже выбранной карте — сбрасываем её
+        discardPickUid[side] = null;
+        discardCardFromHand(side, index, card);
+        return;
+      }
+      // Первый клик — выбираем карту под сброс (снимая выделение с прежней)
+      discardPickUid[side] = card.uid;
+      renderHands();
+    }
 
     function discardCardFromHand(side, index, card) {
       if (animating) return;
@@ -7255,6 +7295,7 @@ function clearGroup(group) {
       const side = currentTurn;
       if (discardLocked[side]) return;
       discardMode[side] = !discardMode[side];
+      discardPickUid[side] = null;
       if (discardMode[side]) resetAllSelections();
       updateDiscardTriggerUI();
       renderHands();
