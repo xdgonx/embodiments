@@ -28,7 +28,7 @@
       background: #000;
       touch-action: manipulation;
     }
-    body {
+        body {
       margin: 0;
       padding: 0;
       width: 1920px;
@@ -37,7 +37,7 @@
       top: 0;
       left: 0;
       transform-origin: top left;
-      overflow: hidden;
+      overflow: visible;
       background: #000;
       font-family: monospace;
       touch-action: manipulation;
@@ -85,11 +85,12 @@
       #orientation-overlay { display: flex; }
     }
     canvas { display: block; }
-    #discard-left {
-      position: fixed; top: 0; left: 0;
+        #discard-left {
+      position: fixed; top: 8px; left: 8px;
       padding: 12px 18px 12px;
+      border: 1px solid rgba(239, 31, 31, 0.55);
       border-bottom: 2px solid #ef1f1f;
-      border-radius: 0 0 12px 0;
+      border-radius: 12px;
       background: linear-gradient(to bottom, rgba(60,10,10,0.9), rgba(0,0,0,0.55));
       box-shadow: 0 6px 22px rgba(239,31,31,0.35), inset 0 0 14px rgba(239,31,31,0.10);
       z-index: 10; min-width: 220px;
@@ -98,10 +99,11 @@
     #discard-left .header { color: #ef1f1f; font-size: 12px; text-align: center; margin-top: 8px; letter-spacing: 0.5px; }
     #discard-left .header .count { color: #ffffff; font-size: 13px; font-weight: bold; margin-left: 4px; }
     #discard-right {
-      position: fixed; top: 0; right: 0;
+      position: fixed; top: 8px; right: 8px;
       padding: 12px 18px 12px;
+      border: 1px solid rgba(255, 195, 0, 0.55);
       border-bottom: 2px solid #ffc300;
-      border-radius: 0 0 0 12px;
+      border-radius: 12px;
       background: linear-gradient(to bottom, rgba(60,50,10,0.9), rgba(0,0,0,0.55));
       box-shadow: 0 6px 22px rgba(255,195,0,0.35), inset 0 0 14px rgba(255,195,0,0.10);
       z-index: 10; min-width: 220px;
@@ -2207,7 +2209,7 @@
     // === Масштабирование body под реальный экран ===
     // Внутреннее пространство всегда 1920×1080, снаружи — как получится.
     // Пропорции не искажаются, на не-16:9 экранах будут чёрные поля.
-        function fitBodyToScreen() {
+            function fitBodyToScreen() {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       const scale = Math.min(vw / VIRTUAL_W, vh / VIRTUAL_H);
@@ -2216,8 +2218,38 @@
       document.body.style.transform =
         `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
 
-      // Компенсируем родительский transform для оверлеев, которые должны
-      // покрывать весь физический экран, а не только body.
+      // Canvas растягиваем на весь физический экран (в координатах body).
+      // Внутренняя сетка игры 16:9 остаётся точно такой же по размеру,
+      // а по краям canvas показывает больше 3D-сцены — те самые звёзды.
+      const canvas = renderer.domElement;
+      canvas.style.left   = (-offsetX / scale) + 'px';
+      canvas.style.top    = (-offsetY / scale) + 'px';
+      canvas.style.width  = (vw / scale) + 'px';
+      canvas.style.height = (vh / scale) + 'px';
+      // Меняем разрешение рендера, но CSS-размер не трогаем —
+      // его мы задали чуть выше в body-координатах.
+      renderer.setSize(vw, vh, false);
+
+      // Камера: 16:9-кадр игры всегда целиком виден по центру.
+      // Если экран шире 16:9 — увеличиваем горизонтальный обзор.
+      // Если экран выше/уже — увеличиваем вертикальный, чтобы
+      // игровые 16:9 не обрезались по бокам.
+      const GAME_ASPECT = VIRTUAL_W / VIRTUAL_H;
+      const vAspect = vw / vh;
+      const BASE_FOV = 50;
+      let fov;
+      if (vAspect >= GAME_ASPECT) {
+        fov = BASE_FOV;
+      } else {
+        fov = 2 * Math.atan(
+          Math.tan(BASE_FOV * Math.PI / 360) * GAME_ASPECT / vAspect
+        ) * 180 / Math.PI;
+      }
+      camera.fov = fov;
+      camera.aspect = vAspect;
+      camera.updateProjectionMatrix();
+
+      // Оверлеи, которые должны покрывать физический экран.
       ['orientation-overlay', 'discard-dim-overlay'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
@@ -2228,6 +2260,31 @@
         el.style.width = (vw / scale) + 'px';
         el.style.height = (vh / scale) + 'px';
       });
+    }
+	
+	    // Переводит координаты из системы окна (getBoundingClientRect)
+    // в систему body (в которой живут position: fixed-дети после transform).
+    function vpToBody(x, y) {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const scale = Math.min(vw / VIRTUAL_W, vh / VIRTUAL_H);
+      const offsetX = (vw - VIRTUAL_W * scale) / 2;
+      const offsetY = (vh - VIRTUAL_H * scale) / 2;
+      return { x: (x - offsetX) / scale, y: (y - offsetY) / scale, scale };
+    }
+
+    function bodyRectOf(el) {
+      const r = el.getBoundingClientRect();
+      const tl = vpToBody(r.left, r.top);
+      const br = vpToBody(r.right, r.bottom);
+      return {
+        left:   tl.x,
+        top:    tl.y,
+        right:  br.x,
+        bottom: br.y,
+        width:  br.x - tl.x,
+        height: br.y - tl.y,
+      };
     }
     fitBodyToScreen();
     renderer.shadowMap.enabled = true;
@@ -5074,8 +5131,8 @@ function clearGroup(group) {
       });
     }
 
-    function projectLocationBonusButtons() {
-      const rect = renderer.domElement.getBoundingClientRect();
+        function projectLocationBonusButtons() {
+      const rect = bodyRectOf(renderer.domElement);
       ['white', 'black'].forEach(side => {
         LOCATION_BONUS_IDS.forEach(locId => {
 		  const btn = locationBonusButtons[side + '_' + locId];
@@ -7566,7 +7623,7 @@ function clearGroup(group) {
 	  const canMirror = targetPiece && getMirrorTargets(targetPiece).length > 0;
 	  if (actionMirrorBtn) actionMirrorBtn.classList.toggle('disabled', !canMirror);
 
-      const rect = cardElement.getBoundingClientRect();
+      const rect = bodyRectOf(cardElement);
       actionsEl.classList.add('visible');
       const panelW = actionsEl.offsetWidth || 200;
       const panelH = actionsEl.offsetHeight || 100;
@@ -7759,7 +7816,7 @@ function clearGroup(group) {
         discardPickBtnEl.classList.add('hidden');
         return;
       }
-      const rect = cardEl.getBoundingClientRect();
+      const rect = bodyRectOf(cardEl);
       discardPickBtnEl.classList.remove('hidden');
       discardPickBtnEl.style.left = (rect.left + rect.width / 2) + 'px';
       discardPickBtnEl.style.top  = (rect.bottom + 6) + 'px';
@@ -7906,7 +7963,7 @@ function clearGroup(group) {
 
       // Позиционируем серые напоминалки о зерцалах над жетонами
       if (mirrorFieldReminderMap.size > 0) {
-        const rect = renderer.domElement.getBoundingClientRect();
+        const rect = bodyRectOf(renderer.domElement);
         mirrorFieldReminderMap.forEach((el, id) => {
           const piece = pieces.find(p => p.id === id);
           if (!piece || !el.classList.contains('visible')) return;
