@@ -1562,6 +1562,29 @@
       font-size: 13px;
       padding: 8px 16px;
     }
+	    /* Увеличенные элементы UI для мобильного режима.
+       Всё под html.is-mobile — десктоп не затронут. */
+    html.is-mobile #end-turn {
+      font-size: 14px;
+      padding: 12px 20px;
+    }
+    html.is-mobile .panel-confirm {
+      font-size: 14px;
+      padding: 12px 32px;
+    }
+    html.is-mobile .lbp-reveal-btn {
+      font-size: 12px;
+      padding: 8px 12px;
+    }
+    html.is-mobile .lpd-back-btn {
+      width: 42px;
+      height: 42px;
+      font-size: 22px;
+    }
+    html.is-mobile .lbp-piece-options .piece-option {
+      width: 60px;
+      height: 60px;
+    }
   </style>
 </head>
 <body>
@@ -4796,9 +4819,18 @@ function clearGroup(group) {
         const card = revealState.cards[idx];
         const cardClass = 'discard-mini ' + (side === 'white' ? 'white-card' : 'black-card');
 
-        const wrapper = document.createElement('div');
+                const wrapper = document.createElement('div');
         wrapper.className = 'lbp-reveal-item';
 
+        // Кнопка «Вернуть» — сверху, до карты. Так палец не задевает
+        // саму карту, когда целится в кнопку.
+        const returnBtn = document.createElement('button');
+        returnBtn.className = 'lbp-reveal-btn return-btn';
+        returnBtn.textContent = 'Вернуть';
+        returnBtn.addEventListener('click', (e) => { e.stopPropagation(); returnRevealCardToDeck(idx); });
+        wrapper.appendChild(returnBtn);
+
+        // Сама карта — в середине.
         const cardEl = document.createElement('div');
         cardEl.className = cardClass;
         const img = document.createElement('img');
@@ -4809,12 +4841,7 @@ function clearGroup(group) {
         attachCardHover(cardEl, card);
         wrapper.appendChild(cardEl);
 
-        const returnBtn = document.createElement('button');
-        returnBtn.className = 'lbp-reveal-btn return-btn';
-        returnBtn.textContent = 'Вернуть';
-        returnBtn.addEventListener('click', (e) => { e.stopPropagation(); returnRevealCardToDeck(idx); });
-        wrapper.appendChild(returnBtn);
-
+        // Кнопка «Сбросить» — снизу, после карты.
         const discardBtn = document.createElement('button');
         discardBtn.className = 'lbp-reveal-btn discard-btn';
         discardBtn.textContent = 'Сбросить';
