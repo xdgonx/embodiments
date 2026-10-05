@@ -223,48 +223,11 @@
     #move-confirm { cursor: default; }
     #attack-confirm { cursor: default; }
     #mirror-confirm { cursor: default; }
-    .etc-confirm,
-    .ec-confirm {
-      margin-top: 6px;
-      padding: 8px 26px;
-      font-family: monospace;
-      font-size: 12px;
-      font-weight: bold;
-      letter-spacing: 1px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.15s, box-shadow 0.15s, border-color 0.15s, color 0.15s;
-      user-select: none;
-    }
-    /* Как кнопка «Подтвердить» в бонусе 1 локации (активное состояние) */
-    .ec-confirm {
-      background: #2a2a2a;
-      border: 1px solid #555;
-      color: #777;
-      cursor: not-allowed;
-    }
-    .ec-confirm.enabled {
-      background: #2a6;
-      border-color: #3c8;
-      color: #fff;
-      cursor: pointer;
-      box-shadow: 0 0 12px rgba(51, 204, 102, 0.5);
-    }
-    .ec-confirm.enabled:hover {
-      background: #3c8;
-      box-shadow: 0 0 16px rgba(51, 204, 102, 0.8);
-    }
-    .etc-confirm {
-      background: #2a6;
-      border: 1px solid #3c8;
-      color: #fff;
-      box-shadow: 0 0 12px rgba(51, 204, 102, 0.5);
-    }
-    .etc-confirm:hover {
-      background: #3c8;
-      box-shadow: 0 0 16px rgba(51, 204, 102, 0.8);
-    }
-    .mc-confirm {
+       /* Единая кнопка «Подтвердить» во всех плашках.
+       По умолчанию — серая и неактивная, при .enabled — зелёная.
+       Класс .always-on используется в тех плашках, где кнопка всегда активна
+       (например, «Завершить ход» и «Бонус второй локации»). */
+    .panel-confirm {
       margin-top: 10px;
       padding: 8px 26px;
       font-family: monospace;
@@ -279,41 +242,16 @@
       user-select: none;
       transition: background 0.15s, box-shadow 0.15s, border-color 0.15s, color 0.15s;
     }
-    .mc-confirm.enabled {
+    .panel-confirm.enabled,
+    .panel-confirm.always-on {
       background: #2a6;
       border-color: #3c8;
       color: #fff;
       cursor: pointer;
       box-shadow: 0 0 12px rgba(51, 204, 102, 0.5);
     }
-    .mc-confirm.enabled:hover {
-      background: #3c8;
-      box-shadow: 0 0 16px rgba(51, 204, 102, 0.8);
-    }
-    /* Кнопка «Подтвердить» в плашке атаки — серая, пока нет цели */
-    .ac-confirm {
-      margin-top: 10px;
-      padding: 8px 26px;
-      font-family: monospace;
-      font-size: 12px;
-      font-weight: bold;
-      letter-spacing: 1px;
-      border-radius: 6px;
-      border: 1px solid #555;
-      background: #2a2a2a;
-      color: #777;
-      cursor: not-allowed;
-      user-select: none;
-      transition: background 0.15s, box-shadow 0.15s, border-color 0.15s, color 0.15s;
-    }
-    .ac-confirm.enabled {
-      background: #2a6;
-      border-color: #3c8;
-      color: #fff;
-      cursor: pointer;
-      box-shadow: 0 0 12px rgba(51, 204, 102, 0.5);
-    }
-    .ac-confirm.enabled:hover {
+    .panel-confirm.enabled:hover,
+    .panel-confirm.always-on:hover {
       background: #3c8;
       box-shadow: 0 0 16px rgba(51, 204, 102, 0.8);
     }
@@ -483,33 +421,10 @@
       box-shadow: 0 0 14px rgba(51, 221, 85, 0.95), 0 2px 5px rgba(0,0,0,0.75) !important;
       transform: translateY(-4px);
     }
-    .lbp-confirm {
-      margin-top: 12px;
-      padding: 8px 26px;
-      font-family: monospace;
-      font-size: 12px;
-      font-weight: bold;
-      letter-spacing: 1px;
-      border-radius: 6px;
-      border: 1px solid #555;
-      background: #2a2a2a;
-      color: #777;
-      cursor: not-allowed;
-      transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
-      user-select: none;
-    }
-    .lbp-confirm.enabled {
-      background: #2a6;
-      border-color: #3c8;
-      color: #fff;
-      cursor: pointer;
-      box-shadow: 0 0 12px rgba(51, 204, 102, 0.5);
-    }
-    .lbp-confirm.enabled:hover {
-      background: #3c8;
-      box-shadow: 0 0 16px rgba(51, 204, 102, 0.8);
-    }
-    .lbp-confirm.hidden {
+        /* Кнопка «Подтвердить» в панели бонуса локации.
+       Базовые стили берёт из .panel-confirm, здесь — только
+       состояние скрытия, которым управляет JS. */
+    #lbp-confirm.hidden {
       display: none;
     }
 
@@ -781,27 +696,6 @@
 	  color: #fff;
 	}
 
-    /* Кнопка Подтвердить для плашки 2 локации */
-    .b2c-confirm {
-      margin-top: 12px;
-      padding: 8px 26px;
-      font-family: monospace;
-      font-size: 12px;
-      font-weight: bold;
-      letter-spacing: 1px;
-      border-radius: 6px;
-      border: 1px solid #3c8;
-      background: #2a6;
-      color: #fff;
-      cursor: pointer;
-      transition: background 0.15s, box-shadow 0.15s;
-      user-select: none;
-      box-shadow: 0 0 12px rgba(51, 204, 102, 0.5);
-    }
-    .b2c-confirm:hover {
-      background: #3c8;
-      box-shadow: 0 0 16px rgba(51, 204, 102, 0.8);
-    }
     /* Плашка 2 локации — безопасная зона, курсор обычный */
     #bonus2-confirm { cursor: default; }
 
@@ -1629,9 +1523,7 @@
       width: 100%; height: 100%; object-fit: cover; display: block;
     }
 
-	    /* Оверлеи вынесены из body и не сжимаются — уменьшаем размеры на телефоне */    /* Мобильные оверлеи — только для тач-устройств.
-       (hover: none) and (pointer: coarse) срабатывает на телефонах
-       и планшетах, но НИКОГДА — на десктопе, даже если окно узкое. */
+	 /* Компактные оверлеи для узких экранов и тач-устройств. */
     @media (max-width: 1200px), (pointer: coarse) {
       .deck-overlay-content {
         padding: 12px 16px 16px;
@@ -1722,7 +1614,7 @@
     <button id="discard-trigger" class="hidden" title="Сбросить карты">
       <img src="ui/reset.png" alt="Сброс" onerror="this.outerHTML='<span class=&quot;btn-fallback&quot;>↺</span>'">
     </button>
-    <button id="etc-confirm" class="etc-confirm">Завершить ход</button>
+    <button id="etc-confirm" class="etc-confirm panel-confirm always-on">Завершить ход</button>
   </div>
 
   <div id="location-bonus-panel" class="hidden">
@@ -1741,7 +1633,7 @@
     <div id="lbp-reveal-columns" class="lbp-reveal-columns hidden">
       <div id="lbp-reveal-list" class="lbp-reveal-list"></div>
     </div>
-    <button id="lbp-confirm" class="lbp-confirm hidden">Подтвердить</button>
+    <button id="lbp-confirm" class="lbp-confirm panel-confirm hidden">Подтвердить</button>
     <button id="location-bonus-icon">
       <img src="ui/reset.png" alt="" onerror="this.outerHTML='<span class=&quot;btn-fallback&quot;>↺</span>'">
     </button>
@@ -1754,7 +1646,7 @@
       <div class="ac-label">ИССЛЕДУЮЩИЙ:</div>
       <div id="ec-piece-options" class="lbp-piece-options"></div>
     </div>
-    <button id="ec-confirm" class="ec-confirm">Подтвердить</button>
+    <button id="ec-confirm" class="ec-confirm panel-confirm">Подтвердить</button>
   </div>
   
   <div id="move-confirm" class="hidden">
@@ -1764,7 +1656,7 @@
       <div class="ac-label">ПЕРЕДВИГАЮЩИЙСЯ:</div>
       <div id="mc-piece-options" class="lbp-piece-options"></div>
     </div>
-    <button id="mc-confirm" class="mc-confirm">Подтвердить</button>
+    <button id="mc-confirm" class="mc-confirm panel-confirm">Подтвердить</button>
   </div>
   
   <div id="attack-confirm" class="hidden">
@@ -1787,7 +1679,7 @@
         <canvas id="ac-result-after" class="ac-result-hearts" width="1500" height="180"></canvas>
       </div>
     </div>
-    <button id="ac-confirm" class="ac-confirm">Подтвердить</button>
+    <button id="ac-confirm" class="ac-confirm panel-confirm">Подтвердить</button>
   </div>
 
   <div id="mirror-confirm" class="hidden">
@@ -1798,13 +1690,13 @@
       <div class="ac-label">ЦЕЛЬ:</div>
       <div id="mirror-target-options" class="lbp-piece-options"></div>
     </div>
-    <button id="mirror-confirm-btn" class="mc-confirm">Подтвердить</button>
+    <button id="mirror-confirm-btn" class="mc-confirm panel-confirm">Подтвердить</button>
   </div>
 
   <div id="bonus2-confirm" class="hidden">
     <div class="b2c-title">🎁 Бонус второй локации</div>
     <div class="b2c-sub">Вскрыть 2 карты из колоды. Это действие необратимо.</div>
-    <button id="b2c-confirm" class="b2c-confirm">Подтвердить</button>
+      <button id="b2c-confirm" class="b2c-confirm panel-confirm always-on">Подтвердить</button>
   </div>
 
   <div id="bottom-right">
@@ -2223,6 +2115,8 @@
     camera.aspect = VIRTUAL_W / VIRTUAL_H;
     camera.updateProjectionMatrix();
 
+
+
     // === Масштабирование body под реальный экран ===
     // Внутреннее пространство всегда 1920×1080, снаружи — как получится.
     // Пропорции не искажаются, на не-16:9 экранах будут чёрные поля.
@@ -2287,7 +2181,7 @@
     // в систему body (в которой живут position: fixed-дети после transform).
     function vpToBody(x, y) {
       const vw = window.innerWidth;
-      const vh = window.innerHeight;
+      const vh = document.documentElement.clientHeight || window.innerHeight;
       const scale = Math.min(vw / VIRTUAL_W, vh / VIRTUAL_H);
       const offsetX = (vw - VIRTUAL_W * scale) / 2;
       const offsetY = (vh - VIRTUAL_H * scale) / 2;
@@ -8051,21 +7945,24 @@ if (screen.orientation && screen.orientation.addEventListener) {
     // прячется адресная строка, и когда включается fullscreen по первому тапу.
     // Без этих вызовов ориентационный оверлей и игровой кадр могут
     // остаться в «промежуточном» размере (выглядит как сжатый UI).
-    window.addEventListener('load', () => {
-      fitBodyToScreen();
-      setTimeout(fitBodyToScreen, 100);
-      setTimeout(fitBodyToScreen, 400);
-      setTimeout(fitBodyToScreen, 1000);
-    });
-    // На случай, если к моменту навешивания load уже прогремел
-    if (document.readyState === 'complete') {
-      fitBodyToScreen();
-      setTimeout(fitBodyToScreen, 400);
-      setTimeout(fitBodyToScreen, 1000);
+        // Единый механизм пересчёта layout. ResizeObserver сам сообщает,
+    // когда реальный размер окна изменился (показ/скрытие адресной строки,
+    // поворот экрана, вход/выход из fullscreen). Никаких магических setTimeout.
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => fitBodyToScreen());
+      ro.observe(document.documentElement);
+    }
+    // Fallback для очень старых браузеров без ResizeObserver.
+    else {
+      window.addEventListener('load', fitBodyToScreen);
+      window.addEventListener('orientationchange', fitBodyToScreen);
     }
     // Fullscreen меняет innerHeight — пересчитываем ещё раз после входа.
     document.addEventListener('fullscreenchange', fitBodyToScreen);
     document.addEventListener('webkitfullscreenchange', fitBodyToScreen);
+
+    // Первичный вызов — до того, как сработал ResizeObserver.
+    fitBodyToScreen();
 
     initPieces();
   </script>
