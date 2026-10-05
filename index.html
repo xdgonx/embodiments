@@ -85,7 +85,12 @@
     @media (orientation: portrait) and (max-width: 900px) {
       #orientation-overlay { display: flex; }
     }
-    canvas { display: block; }
+        canvas {
+      display: block;
+      touch-action: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
         #discard-left {
       position: fixed; top: 8px; left: 8px;
       padding: 12px 18px 12px;
@@ -6070,6 +6075,20 @@ function clearGroup(group) {
     let suppressNextClick = false;
     const LONG_PRESS_MS = 450;
     const LONG_PRESS_MOVE_TOLERANCE = 12;
+	    // Long press нужен только для карт, жетонов и игрового поля
+    // (чтобы показать увеличенную версию). На обычных кнопках UI он
+    // мешает: палец задерживается чуть дольше 450мс — и клик по кнопке
+    // уже не срабатывает. Поэтому для кнопок и панелей long press отключён.
+    function isUiControlForLongPress(el) {
+      if (!el || !el.closest) return false;
+      return !!el.closest(
+        'button, a, input, select, textarea, ' +
+        '#end-turn, #turn-panel, #discard-trigger, #location-bonus-icon, ' +
+        '.panel-confirm, .action-btn, .discard-pick-btn, ' +
+        '.lbp-reveal-btn, .lpd-back-btn, .location-bonus-btn, ' +
+        '#victory-restart'
+      );
+    }
 
     function longPressUpdateHover(x, y) {
       const el = document.elementFromPoint(x, y);
@@ -6133,9 +6152,12 @@ function clearGroup(group) {
       updateOverlay();
     }
 
-    document.addEventListener('touchstart', (e) => {
+       document.addEventListener('touchstart', (e) => {
       if (e.touches.length !== 1) return;
       if (longPressActive) return;
+      // Не запускаем long press на кнопках и панелях UI —
+      // там палец может задержаться, а клик должен всё равно сработать.
+      if (isUiControlForLongPress(e.target)) return;
       const t = e.touches[0];
       longPressStartX = t.clientX;
       longPressStartY = t.clientY;
@@ -6231,6 +6253,34 @@ function attachCardHover(el, card) {
     // Fullscreen только при первом тач-контакте (мобилки).
     // На ПК (клик мышью) — не включаем.
     document.addEventListener('touchstart', tryEnterFullscreen, { once: true });
+	    // === Отключаем браузерные жесты (iOS Safari, Android Chrome) ===
+    // Лупа, контекстное меню, двойной тап-зум, pinch-zoom — всё лишнее в игре.
+
+    // Pinch-zoom (двумя пальцами). На iOS это единственный способ
+    // его выключить — через preventDefault на gesture-событиях.
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(evName => {
+      document.addEventListener(evName, (e) => e.preventDefault(), { passive: false });
+    });
+
+    // Контекстное меню (по долгому тапу или правой кнопке) — не нужно.
+    document.addEventListener('contextmenu', (e) => {
+      // Разрешаем контекстное меню на полях ввода (если когда-то появятся),
+      // запрещаем — везде остальном.
+      const tag = (e.target && e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      e.preventDefault();
+    });
+
+    // Двойной тап-зум. Браузер сам обрабатывает его до нашего кода,
+    // поэтому гасим touchend, если между двумя тапами < 350мс.
+    let __lastTapTime = 0;
+    document.addEventListener('touchend', (e) => {
+      const now = Date.now();
+      if (now - __lastTapTime < 350) {
+        e.preventDefault();
+      }
+      __lastTapTime = now;
+    }, { passive: false });
 
     function updateTurnUI() {
       turnPanel.classList.remove('white-turn', 'black-turn');
