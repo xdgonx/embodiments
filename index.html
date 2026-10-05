@@ -85,11 +85,26 @@
     @media (orientation: portrait) and (max-width: 900px) {
       #orientation-overlay { display: flex; }
     }
-        canvas {
+            canvas {
       display: block;
       touch-action: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
+    }
+    /* Запрещаем браузерный drag-and-drop для игровых карт и картинок.
+       Иначе если потянуть карту с зажатой мышью/пальцем — она
+       «прилипает» к курсору как файл. */
+    img,
+    .hand-card,
+    .deck-overlay-card,
+    .reveal-card,
+    .discard-mini,
+    .tablet-mirror-card,
+    .piece-option,
+    .deck-visual,
+    .deck-layer {
+      -webkit-user-drag: none;
+      user-drag: none;
     }
         #discard-left {
       position: fixed; top: 8px; left: 8px;
@@ -6216,7 +6231,7 @@ function clearGroup(group) {
       // Таймер не трогаем — он уже тикает от touchstart.
     }, { passive: false });
 
-    document.addEventListener('touchend', () => {
+        document.addEventListener('touchend', () => {
       if (longPressTimer) {
         clearTimeout(longPressTimer);
         longPressTimer = null;
@@ -6224,6 +6239,12 @@ function clearGroup(group) {
       if (longPressActive) {
         suppressNextClick = true;
         longPressExit();
+      }
+      // Некоторые мобильные браузеры оставляют элемент «наведённым»
+      // или «сфокусированным» после тапа. Явно снимаем фокус — это
+      // гасит остаточные визуальные эффекты.
+      if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
       }
     }, { passive: true });
 
