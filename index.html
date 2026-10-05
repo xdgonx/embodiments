@@ -5547,6 +5547,50 @@ function clearGroup(group) {
 
 });
 
+	    // ============ ПРЕДЗАГРУЗКА ВСЕХ РЕСУРСОВ ============
+    // Fire-and-forget: браузер сам положит картинки в HTTP-кэш,
+    // и когда игра позже создаст <img> с тем же src — они покажутся мгновенно.
+    // Массив держим снаружи, чтобы Image-объекты не были удалены GC
+    // до окончания загрузки (иначе некоторые браузеры отменяют запрос).
+    const __preloadedImages = [];
+    function preloadAllImages() {
+      const paths = new Set();
+
+      // Доска и рубашка карт
+      paths.add('board.png');
+      paths.add('cards/back.png');
+
+      // Иконки UI (они уже подгружаются в других местах, но продублируем)
+      [
+        'ui/move.png', 'ui/attack.png', 'ui/explore.png', 'ui/spell.png',
+        'ui/mirror.png', 'ui/reset.png', 'ui/death.png', 'ui/mid.png',
+        'ui/hearts/heart.png',
+      ].forEach(p => paths.add(p));
+
+      // Сердечки планшетов
+      ['filled', 'dark', 'max'].forEach(v => paths.add(`tablets/hearts/${v}.png`));
+
+      // Кнопки бонусов локаций
+      ['white', 'black'].forEach(side => {
+        LOCATION_BONUS_IDS.forEach(id => paths.add(`ui/${side}_loc${id}.png`));
+      });
+
+      // Жетоны, планшеты, карты — по всем персонажам
+      Object.keys(PROFILES).forEach(key => {
+        paths.add(`pieces/${key}.png`);
+        paths.add(`pieces/${key}_captain.png`);
+        paths.add(`tablets/${key}_front.png`);
+        paths.add(`tablets/${key}_back.png`);
+        ['1', '2', 'ult'].forEach(v => paths.add(`cards/${key}_${v}.png`));
+      });
+
+      paths.forEach(src => {
+        const img = new Image();
+        img.src = src;
+        __preloadedImages.push(img);
+      });
+    }
+	
     async function initPieces() {
       for (const key of Object.keys(PROFILES)) {
         const profile = PROFILES[key];
@@ -8439,6 +8483,9 @@ if (screen.orientation && screen.orientation.addEventListener) {
 
     // Первичный вызов — до того, как сработал ResizeObserver.
     fitBodyToScreen();
+
+    // Предзагрузка всех картинок — стартует сразу, не блокирует игру.
+    preloadAllImages();
 
     initPieces();
   </script>
