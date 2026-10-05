@@ -2192,7 +2192,7 @@
     camera.position.set(0, 14, 9);
     camera.lookAt(0, 0, 0);
 
-                const renderer = new THREE.WebGLRenderer({
+     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       preserveDrawingBuffer: true,
       powerPreference: 'high-performance',
@@ -2202,6 +2202,7 @@
     renderer.domElement.style.position = 'absolute';
     renderer.domElement.style.top = '0';
     renderer.domElement.style.left = '0';
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(VIRTUAL_W, VIRTUAL_H);
     camera.aspect = VIRTUAL_W / VIRTUAL_H;
     camera.updateProjectionMatrix();
@@ -2228,6 +2229,7 @@
       canvas.style.height = (vh / scale) + 'px';
       // Меняем разрешение рендера, но CSS-размер не трогаем —
       // его мы задали чуть выше в body-координатах.
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setSize(vw, vh, false);
 
       // Камера: 16:9-кадр игры всегда целиком виден по центру.
@@ -8003,6 +8005,27 @@ if (screen.orientation && screen.orientation.addEventListener) {
   screen.orientation.addEventListener('change', fitBodyToScreen);
 }
 window.addEventListener('orientationchange', fitBodyToScreen);
+
+    // Пересчитываем layout несколько раз после загрузки.
+    // На мобильных браузерах высота окна меняется, когда показывается /
+    // прячется адресная строка, и когда включается fullscreen по первому тапу.
+    // Без этих вызовов ориентационный оверлей и игровой кадр могут
+    // остаться в «промежуточном» размере (выглядит как сжатый UI).
+    window.addEventListener('load', () => {
+      fitBodyToScreen();
+      setTimeout(fitBodyToScreen, 100);
+      setTimeout(fitBodyToScreen, 400);
+      setTimeout(fitBodyToScreen, 1000);
+    });
+    // На случай, если к моменту навешивания load уже прогремел
+    if (document.readyState === 'complete') {
+      fitBodyToScreen();
+      setTimeout(fitBodyToScreen, 400);
+      setTimeout(fitBodyToScreen, 1000);
+    }
+    // Fullscreen меняет innerHeight — пересчитываем ещё раз после входа.
+    document.addEventListener('fullscreenchange', fitBodyToScreen);
+    document.addEventListener('webkitfullscreenchange', fitBodyToScreen);
 
     initPieces();
   </script>
