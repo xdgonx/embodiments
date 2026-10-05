@@ -1686,6 +1686,44 @@
     html.is-mobile #discard-right .header .count {
       font-size: 15px;
     }
+	    /* Шаг 18: адаптированные панели бонусов локации и зерцала +
+       увеличенные миниатюры карт внутри. Всё под html.is-mobile. */
+    html.is-mobile #location-bonus-panel,
+    html.is-mobile #mirror-confirm {
+      min-width: 460px;
+      max-width: 720px;
+      padding: 14px 24px 16px;
+    }
+    /* Бонус 1 и 4: ряд/сетка мини-карт */
+    html.is-mobile .lbp-mini-cards .discard-mini,
+    html.is-mobile .lbp-discard-cards .discard-mini,
+    html.is-mobile .lbp-pending-discard .discard-mini,
+    html.is-mobile .lbp-reveal-item .discard-mini,
+    html.is-mobile .mirror-card-preview .discard-mini {
+      width: 64px;
+      height: 92px;
+    }
+    html.is-mobile .lbp-mini-cards,
+    html.is-mobile .lbp-discard-cards {
+      gap: 8px;
+    }
+    /* Карты в бонусе 2 — увеличиваем разлёт между ними */
+    html.is-mobile .lbp-reveal-list {
+      gap: 14px;
+    }
+    /* Иконки персонажей в плашках бонуса 5 / зерцала / исследования */
+    html.is-mobile .lbp-piece-options .piece-option {
+      width: 72px;
+      height: 72px;
+    }
+    html.is-mobile .lbp-piece-options {
+      gap: 10px;
+    }
+    /* Крупные вскрытые карты над колодой в бонусе 2 */
+    html.is-mobile .reveal-card {
+      width: 104px;
+      height: 146px;
+    }
   </style>
 </head>
 <body>
