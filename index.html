@@ -368,8 +368,8 @@
       position: static;
       flex-shrink: 0;
       cursor: default;
-      width: round(clamp(44px, 2.7vw, 52px), 1px);
-      height: round(clamp(60px, 3.75vw, 72px), 1px);
+      width: clamp(44px, 2.7vw, 52px);
+      height: clamp(60px, 3.75vw, 72px);
       border-radius: 4px;
       border: 1px solid #555;
       background: #222;
@@ -463,8 +463,8 @@
       flex-shrink: 0;
       cursor: pointer;
       transition: transform 0.15s, box-shadow 0.15s;
-      width: round(clamp(44px, 2.7vw, 52px), 1px);
-      height: round(clamp(60px, 3.75vw, 72px), 1px);
+      width: clamp(44px, 2.7vw, 52px);
+      height: clamp(60px, 3.75vw, 72px);
       border-radius: 4px;
       border: 1px solid #555;
       background: #222;
@@ -613,8 +613,8 @@
       flex-shrink: 0;
       cursor: pointer;
       transition: transform 0.15s, box-shadow 0.15s;
-      width: round(clamp(44px, 2.7vw, 52px), 1px);
-      height: round(clamp(60px, 3.75vw, 72px), 1px);
+      width: clamp(44px, 2.7vw, 52px);
+      height: clamp(60px, 3.75vw, 72px);
       border-radius: 4px;
       border: 1px solid #555;
       background: #222;
@@ -687,8 +687,8 @@
       position: static;
       flex-shrink: 0;
       cursor: pointer;
-      width: round(clamp(44px, 2.7vw, 52px), 1px);
-      height: round(clamp(60px, 3.75vw, 72px), 1px);
+      width: clamp(44px, 2.7vw, 52px);
+      height: clamp(60px, 3.75vw, 72px);
       border-radius: 4px;
       border: 1px solid #555;
       background: #222;
@@ -727,8 +727,8 @@
       flex-shrink: 0;
       cursor: default;
       transition: transform 0.15s, box-shadow 0.15s;
-      width: round(clamp(44px, 2.7vw, 52px), 1px);
-      height: round(clamp(60px, 3.75vw, 72px), 1px);
+      width: clamp(44px, 2.7vw, 52px);
+      height: clamp(60px, 3.75vw, 72px);
       border-radius: 4px;
       border: 1px solid #555;
       background: #222;
@@ -1501,49 +1501,49 @@
     }
 
     .hand-card {
-      width:  round(clamp(88px, 5.7vw, 110px), 1px);
-      height: round(clamp(124px, 8.1vw, 156px), 1px);
+      width:  clamp(88px, 5.7vw, 110px);
+      height: clamp(124px, 8.1vw, 156px);
     }
     .hand-card .fallback .name { font-size: clamp(12px, 0.72vw, 14px); }
     .hand-card .fallback .char { font-size: clamp(9px, 0.55vw, 10px); }
     .hand-card .fallback .icon { font-size: clamp(16px, 1.2vw, 22px); }
 
     .deck-visual {
-      width:  round(clamp(76px, 5.2vw, 100px), 1px);
-      height: round(clamp(108px, 7.3vw, 140px), 1px);
+      width:  clamp(76px, 5.2vw, 100px);
+      height: clamp(108px, 7.3vw, 140px);
     }
-    .deck-layer { height: round(clamp(108px, 7.3vw, 140px), 1px); }
+    .deck-layer { height: clamp(108px, 7.3vw, 140px); }
     .deck-label { font-size: clamp(12px, 0.72vw, 14px); padding: 3px 10px; }
 
     .discard-stack .discard-mini {
-      width:  round(clamp(44px, 2.7vw, 52px), 1px);
-      height: round(clamp(60px, 3.75vw, 72px), 1px);
+      width:  clamp(44px, 2.7vw, 52px);
+      height: clamp(60px, 3.75vw, 72px);
     }
-    .discard-stack { width: round(clamp(44px, 2.7vw, 52px), 1px); }
+    .discard-stack { width: clamp(44px, 2.7vw, 52px); }
 
-    .slots     { gap: round(clamp(4px, 0.5vw, 10px), 1px); }
+    .slots     { gap: clamp(4px, 0.5vw, 10px); }
     .hand-block { padding: 6px 10px 40px; }
     .hand-header { font-size: clamp(11px, 0.72vw, 12px); }
 
     .location-bonus-btn {
-      width:  round(clamp(60px, 4vw, 76px), 1px);
-      height: round(clamp(46px, 2.9vw, 56px), 1px);
-      margin-left: calc(round(clamp(60px, 4vw, 76px), 1px) / -2);
-      margin-top:  calc(round(clamp(46px, 2.9vw, 56px), 1px) / -2);
+      width:  clamp(60px, 4vw, 76px);
+      height: clamp(46px, 2.9vw, 56px);
+      margin-left: calc(clamp(60px, 4vw, 76px) / -2);
+      margin-top:  calc(clamp(46px, 2.9vw, 56px) / -2);
       font-size: clamp(18px, 1.4vw, 26px);
     }
 
     .reveal-card {
-      width:  round(clamp(88px, 5.7vw, 110px), 1px);
-      height: round(clamp(124px, 8.1vw, 156px), 1px);
+      width:  clamp(88px, 5.7vw, 110px);
+      height: clamp(124px, 8.1vw, 156px);
     }
 
-    #discard-left, #discard-right { min-width: round(clamp(190px, 11.5vw, 220px), 1px); }
+    #discard-left, #discard-right { min-width: clamp(190px, 11.5vw, 220px); }
     #discard-left .header, #discard-right .header { font-size: clamp(11px, 0.72vw, 12px); }
     #discard-left .header .count, #discard-right .header .count { font-size: clamp(11px, 0.8vw, 13px); }
 
     #turn-panel {
-      min-width: round(clamp(200px, 12vw, 230px), 1px);
+      min-width: clamp(200px, 12vw, 230px);
       padding: 10px 18px 14px;
     }
     #turn-label { font-size: clamp(13px, 0.85vw, 16px); }
@@ -1552,8 +1552,8 @@
 
     #end-turn-confirm, #location-bonus-panel, #explore-confirm, #bonus2-confirm,
     #move-confirm, #attack-confirm, #mirror-confirm {
-      bottom: round(clamp(96px, 7vw, 132px), 1px);
-      min-width: round(clamp(200px, 14vw, 260px), 1px);
+      bottom: clamp(96px, 7vw, 132px);
+      min-width: clamp(200px, 14vw, 260px);
       padding: 10px 18px 12px;
     }
     #end-turn-confirm .etc-title, #location-bonus-panel .lbp-title, #explore-confirm .ec-title, #bonus2-confirm .b2c-title,
@@ -1609,10 +1609,10 @@
        Визуально похожи на disabled-кнопку локации. */
     .mirror-field-reminder {
       position: fixed;
-      width:  round(clamp(26px, 2.8vw, 40px), 1px);
-      height: round(clamp(36px, 3.9vw, 56px), 1px);
-      margin-left: calc(round(clamp(26px, 2.8vw, 40px), 1px) / -2);
-      margin-top:  calc(round(clamp(36px, 3.9vw, 56px), 1px) / -2);
+      width:  clamp(26px, 2.8vw, 40px);
+      height: clamp(36px, 3.9vw, 56px);
+      margin-left: calc(clamp(26px, 2.8vw, 40px) / -2);
+      margin-top:  calc(clamp(36px, 3.9vw, 56px) / -2);
       border-radius: 6px;
       border: 2px solid #777;
       background: #0a0a14;
@@ -1629,28 +1629,6 @@
       width: 100%; height: 100%; object-fit: cover; display: block;
     }
 
-    #small-screen-notice {
-      display: none;
-      position: fixed; inset: 0;
-      z-index: 999999;
-      background: radial-gradient(circle at 50% 40%, #1a1a2e 0%, #000 80%);
-      align-items: center; justify-content: center;
-      padding: 24px; text-align: center;
-      font-family: monospace; color: #eee;
-    }
-    #small-screen-notice .ssn-icon { font-size: 64px; opacity: 0.8; margin-bottom: 16px; }
-    #small-screen-notice .ssn-title {
-      font-size: 22px; font-weight: bold; letter-spacing: 1px;
-      color: #ff8888; margin-bottom: 12px;
-    }
-    #small-screen-notice .ssn-text {
-      font-size: 13px; color: #aaa; line-height: 1.6;
-      max-width: 340px;
-    }
-    @media (max-width: 300px) {
-      #small-screen-notice { display: flex; }
-    }
-	
 	    /* Оверлеи вынесены из body и не сжимаются — уменьшаем размеры на телефоне */    /* Мобильные оверлеи — только для тач-устройств.
        (hover: none) and (pointer: coarse) срабатывает на телефонах
        и планшетах, но НИКОГДА — на десктопе, даже если окно узкое. */
@@ -8067,7 +8045,6 @@ window.addEventListener('resize', () => {
 if (screen.orientation && screen.orientation.addEventListener) {
   screen.orientation.addEventListener('change', fitBodyToScreen);
 }
-window.addEventListener('orientationchange', fitBodyToScreen);
 
     // Пересчитываем layout несколько раз после загрузки.
     // На мобильных браузерах высота окна меняется, когда показывается /
