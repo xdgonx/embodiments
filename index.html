@@ -2207,7 +2207,7 @@
     // === Масштабирование body под реальный экран ===
     // Внутреннее пространство всегда 1920×1080, снаружи — как получится.
     // Пропорции не искажаются, на не-16:9 экранах будут чёрные поля.
-    function fitBodyToScreen() {
+        function fitBodyToScreen() {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       const scale = Math.min(vw / VIRTUAL_W, vh / VIRTUAL_H);
@@ -2215,6 +2215,19 @@
       const offsetY = (vh - VIRTUAL_H * scale) / 2;
       document.body.style.transform =
         `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+
+      // Компенсируем родительский transform для оверлеев, которые должны
+      // покрывать весь физический экран, а не только body.
+      ['orientation-overlay', 'discard-dim-overlay'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.left = (-offsetX / scale) + 'px';
+        el.style.top = (-offsetY / scale) + 'px';
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+        el.style.width = (vw / scale) + 'px';
+        el.style.height = (vh / scale) + 'px';
+      });
     }
     fitBodyToScreen();
     renderer.shadowMap.enabled = true;
