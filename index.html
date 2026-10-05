@@ -272,10 +272,12 @@
       cursor: pointer;
       box-shadow: 0 0 12px rgba(51, 204, 102, 0.5);
     }
-    .panel-confirm.enabled:hover,
-    .panel-confirm.always-on:hover {
-      background: #3c8;
-      box-shadow: 0 0 16px rgba(51, 204, 102, 0.8);
+        @media (hover: hover) {
+      .panel-confirm.enabled:hover,
+      .panel-confirm.always-on:hover {
+        background: #3c8;
+        box-shadow: 0 0 16px rgba(51, 204, 102, 0.8);
+      }
     }
     .ac-section {
       display: flex;
@@ -492,16 +494,18 @@
       transform: translateZ(0);
     }
     .lbp-piece-options .piece-option.black { border-color: #ffc300; }
-    .lbp-piece-options .piece-option:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 0 10px rgba(239,31,31,0.9);
-    }
-    #location-bonus-panel.black-turn .lbp-piece-options .piece-option:hover {
-      box-shadow: 0 0 10px rgba(255,195,0,0.9);
-    }
-    #attack-confirm.black-turn .lbp-piece-options .piece-option:hover,
-    #mirror-confirm.black-turn .lbp-piece-options .piece-option:hover {
-      box-shadow: 0 0 10px rgba(255,195,0,0.9);
+       @media (hover: hover) {
+      .lbp-piece-options .piece-option:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 0 10px rgba(239,31,31,0.9);
+      }
+      #location-bonus-panel.black-turn .lbp-piece-options .piece-option:hover {
+        box-shadow: 0 0 10px rgba(255,195,0,0.9);
+      }
+      #attack-confirm.black-turn .lbp-piece-options .piece-option:hover,
+      #mirror-confirm.black-turn .lbp-piece-options .piece-option:hover {
+        box-shadow: 0 0 10px rgba(255,195,0,0.9);
+      }
     }
     .lbp-piece-options .piece-option.selected {
       border-color: #33dd55 !important;
@@ -602,18 +606,22 @@
       transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
       flex-shrink: 0;
     }
-    .lpd-back-btn:hover {
-      background: rgba(60, 15, 15, 0.95);
-      box-shadow: 0 0 12px rgba(239, 31, 31, 0.85);
-      transform: translateY(-2px);
+        @media (hover: hover) {
+      .lpd-back-btn:hover {
+        background: rgba(60, 15, 15, 0.95);
+        box-shadow: 0 0 12px rgba(239, 31, 31, 0.85);
+        transform: translateY(-2px);
+      }
     }
     #location-bonus-panel.black-turn .lpd-back-btn {
       border-color: #ffc300;
       color: #ffdf77;
     }
-    #location-bonus-panel.black-turn .lpd-back-btn:hover {
-      background: rgba(60, 50, 10, 0.95);
-      box-shadow: 0 0 12px rgba(255, 195, 0, 0.85);
+    @media (hover: hover) {
+      #location-bonus-panel.black-turn .lpd-back-btn:hover {
+        background: rgba(60, 50, 10, 0.95);
+        box-shadow: 0 0 12px rgba(255, 195, 0, 0.85);
+      }
     }
     .lbp-pending-discard .discard-mini {
       position: static;
@@ -692,30 +700,39 @@
       border-color: #33dd55;
       color: #77ee99;
     }
-    .lbp-reveal-btn.return-btn:hover {
-      background: #1a3a22;
-      color: #fff;
+        @media (hover: hover) {
+      .lbp-reveal-btn.return-btn:hover {
+        background: #1a3a22;
+        color: #fff;
+      }
     }
 	.lbp-reveal-btn.discard-btn {
 	  border-color: #ff8800;
 	  color: #ffb055;
 	}
-	.lbp-reveal-btn.discard-btn:hover {
-	  background: #3a2200;
-	  color: #fff;
+	@media (hover: hover) {
+	  .lbp-reveal-btn.discard-btn:hover {
+		background: #3a2200;
+		color: #fff;
+	  }
 	}
 
     /* Плашка 2 локации — безопасная зона, курсор обычный */
     #bonus2-confirm { cursor: default; }
 
-    .lbp-mini-cards .discard-mini:hover,
-    .lbp-discard-cards .discard-mini:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 0 10px rgba(239,31,31,0.9);
-    }
-    #location-bonus-panel.black-turn .lbp-mini-cards .discard-mini:hover,
-    #location-bonus-panel.black-turn .lbp-discard-cards .discard-mini:hover {
-      box-shadow: 0 0 10px rgba(255,195,0,0.9);
+        /* Hover для мини-карт в бонусах — только при реальном наведении мыши.
+       На тач-экранах hover «залипает» после тапа: карта остаётся
+       приподнятой, пока не ткнёшь в другое место. */
+    @media (hover: hover) {
+      .lbp-mini-cards .discard-mini:hover,
+      .lbp-discard-cards .discard-mini:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 0 10px rgba(239,31,31,0.9);
+      }
+      #location-bonus-panel.black-turn .lbp-mini-cards .discard-mini:hover,
+      #location-bonus-panel.black-turn .lbp-discard-cards .discard-mini:hover {
+        box-shadow: 0 0 10px rgba(255,195,0,0.9);
+      }
     }
 
     #discard-trigger,
@@ -735,7 +752,9 @@
     #discard-trigger .btn-fallback,
     #location-bonus-icon .btn-fallback { color: #ef1f1f; font-size: 22px; font-weight: bold; }
 
-    #discard-trigger:hover { transform: translateY(-3px) scale(1.05); }
+        @media (hover: hover) {
+      #discard-trigger:hover { transform: translateY(-3px) scale(1.05); }
+    }
 
 	/* === АНИМАЦИЯ ПУЛЬСАЦИИ (цвет — через CSS-переменные).
    Один @keyframes на все цвета.
@@ -1212,9 +1231,11 @@
       transition: transform 0.15s, box-shadow 0.15s;
       z-index: 5;
     }
-    .tablet-mirror-card:hover {
-      transform: scale(1.06);
-      box-shadow: 0 8px 22px rgba(0,0,0,0.9), 0 0 34px rgba(239,31,31,0.95);
+        @media (hover: hover) {
+      .tablet-mirror-card:hover {
+        transform: scale(1.06);
+        box-shadow: 0 8px 22px rgba(0,0,0,0.9), 0 0 34px rgba(239,31,31,0.95);
+      }
     }
     .tablet-mirror-card img {
       width: 100%; height: 100%; object-fit: cover; display: block;
@@ -1223,8 +1244,10 @@
       border-color: #ffc300;
       box-shadow: 0 6px 16px rgba(0,0,0,0.85), 0 0 22px rgba(255,195,0,0.55);
     }
-    .tablet-overlay-content.black-team .tablet-mirror-card:hover {
-      box-shadow: 0 8px 22px rgba(0,0,0,0.9), 0 0 34px rgba(255,195,0,0.95);
+    @media (hover: hover) {
+      .tablet-overlay-content.black-team .tablet-mirror-card:hover {
+        box-shadow: 0 8px 22px rgba(0,0,0,0.9), 0 0 34px rgba(255,195,0,0.95);
+      }
     }
     .tablet-fallback {
       width: 340px; height: 480px;
@@ -1336,7 +1359,9 @@
       letter-spacing: 1px; cursor: pointer;
       transition: background 0.15s, transform 0.15s;
     }
-    #victory-restart:hover { background: #3c8; transform: translateY(-2px) scale(1.03); }
+        @media (hover: hover) {
+      #victory-restart:hover { background: #3c8; transform: translateY(-2px) scale(1.03); }
+    }
     @keyframes victoryPop {
       from { transform: scale(0.6); opacity: 0; }
       to   { transform: scale(1); opacity: 1; }
@@ -1517,10 +1542,12 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.75), 0 0 10px rgba(255,136,0,0.35);
       transition: background 0.15s, color 0.15s, box-shadow 0.15s;
     }
-    .discard-pick-btn:hover {
-      background: #3a2200;
-      color: #fff;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.8), 0 0 16px rgba(255,136,0,0.7);
+        @media (hover: hover) {
+      .discard-pick-btn:hover {
+        background: #3a2200;
+        color: #fff;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.8), 0 0 16px rgba(255,136,0,0.7);
+      }
     }
     .discard-pick-btn.hidden { display: none; }
 
@@ -1556,9 +1583,16 @@
         max-height: 90vh;
         gap: 8px;
       }
-      .deck-overlay-header { font-size: 13px; }
-      .deck-overlay-cards { gap: 6px; max-height: 78vh; }
-      .deck-overlay-card { width: 62px; height: 88px; }
+	  /* Карты в окне колоды — пропорционально экрану.
+		 На широком телефоне (700-900 CSS-px) выходит ~45-55px —
+		 визуально как на десктопе. */
+	  .deck-overlay-card {
+		width:  clamp(38px, 6.5vw, 60px);
+		height: clamp(54px, 9.2vw, 85px);
+	  }
+	  .deck-overlay-cards { gap: 5px; max-height: 78vh; }
+	  .deck-overlay-header { font-size: 12px; letter-spacing: 0.5px; }
+	  .deck-overlay-content { padding: 10px 14px 14px; gap: 6px; }
 
       .overlay-card-image { max-width: 82vw; max-height: 72vh; }
       .overlay-card-placeholder { width: 140px; max-height: 72vh; padding: 12px; font-size: 9px; }
@@ -2380,7 +2414,7 @@
 
      const renderer = new THREE.WebGLRenderer({
       antialias: true,
-      preserveDrawingBuffer: true,
+      preserveDrawingBuffer: false,
       powerPreference: 'high-performance',
     });
     // Canvas живёт в CSS-координатах виртуального body (1920×1080).
