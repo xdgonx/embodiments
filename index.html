@@ -1855,11 +1855,11 @@
 	/* === Компактные панели сброса для мобильных === */
 @media (max-width: 1200px), (pointer: coarse) {
   /* Верхние угловые плашки "Сброс белых/чёрных" */
-  #discard-left,
+    #discard-left,
   #discard-right {
-    padding: 10px 14px 12px;
-    min-width: 180px;
-    border-radius: 10px;
+    padding: 14px 18px 16px;
+    min-width: 240px;
+    border-radius: 12px;
     top: 8px;
   }
   #discard-left { left: 8px; }
@@ -1867,27 +1867,27 @@
 
   #discard-left .header,
   #discard-right .header {
-    font-size: 13px;
-    margin-top: 7px;
+    font-size: 14px;
+    margin-top: 9px;
     letter-spacing: 0.4px;
   }
   #discard-left .header .count,
   #discard-right .header .count {
-    font-size: 14px;
+    font-size: 15px;
   }
 
-  /* Мини-карты внутри угловых плашек */
+  /* Мини-карты внутри угловых плашек — как в бонусе 1 локации (64×92) */
   .discard-stack .discard-mini {
-    width: 42px;
-    height: 58px;
-    border-radius: 4px;
+    width: 64px;
+    height: 92px;
+    border-radius: 5px;
   }
   .discard-stack {
-    width: 42px;
+    width: 64px;
   }
   .discard-slots-row {
-    min-height: 64px;
-    gap: 6px;
+    min-height: 100px;
+    gap: 8px;
   }
 }
   </style>
@@ -7862,7 +7862,7 @@ function attachCardHover(el, card) {
       if (!container) return;
       container.innerHTML = '';
       const charOrder = [...TEAM_CONFIG[side].members];
-      const MAX_PER_STACK = 5, OFFSET = 30, CARD_H = 72;
+      const MAX_PER_STACK = 5, OFFSET = 32, CARD_H = 92;
       const grouped = {};
       charOrder.forEach(k => grouped[k] = []);
       cards.forEach(card => { if (grouped[card.charKey]) grouped[card.charKey].push(card); });
