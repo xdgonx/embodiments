@@ -6271,7 +6271,7 @@ function clearGroup(group) {
       );
     }
 
-    function longPressUpdateHover(x, y) {
+        function longPressUpdateHover(x, y) {
       const el = document.elementFromPoint(x, y);
 
       // 1. Иконки персонажей в плашках
@@ -6304,9 +6304,17 @@ function clearGroup(group) {
         cursor = cursor.parentElement;
       }
 
-      // 3. Ничего не нашли — проверяем 3D-сцену
+      // 3. Ничего не нашли — обычно проверяем 3D-сцену.
+      //    НО: если открыт оверлей колоды/сброса — не проваливаемся
+      //    в 3D-сцену, иначе long press «протыкает» окошко и показывает
+      //    планшет персонажа, который лежит под ним.
       hoveredCard = null;
-      checkHoverAt(x, y);
+      hoveredPiece = null;
+      hoveredCaptain = null;
+      hoveredBadgeCard = null;
+      if (!deckOverlayEl.classList.contains('visible')) {
+        checkHoverAt(x, y);
+      }
       updateTabletOverlay();
       updateOverlay();
     }
