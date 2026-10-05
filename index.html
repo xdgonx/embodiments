@@ -1741,6 +1741,29 @@
     html.is-mobile .lbp-piece-choice .lbp-piece-hint {
       margin-top: 6px;
     }
+	    /* Шаг 20: расширяем остальные плашки на мобилке — атака,
+       движение, исследование, конец хода. Плашка атаки особенно
+       тяжёлая: две полоски сердечек + стрелка + подписи секций. */
+    html.is-mobile #attack-confirm,
+    html.is-mobile #move-confirm,
+    html.is-mobile #explore-confirm,
+    html.is-mobile #end-turn-confirm {
+      min-width: 460px;
+      max-width: 640px;
+      padding: 14px 22px 16px;
+    }
+    /* Сердечки «РЕЗУЛЬТАТ» в плашке атаки — крупнее, чтобы было видно. */
+    html.is-mobile .ac-result-hearts {
+      height: 48px;
+    }
+    html.is-mobile .ac-result-arrow {
+      font-size: 22px;
+    }
+    /* Кнопки возврата и сброса в бонусе 2 — компактнее текст, крупнее область. */
+    html.is-mobile .lbp-reveal-btn {
+      font-size: 14px;
+      padding: 10px 14px;
+    }
   </style>
 </head>
 <body>
