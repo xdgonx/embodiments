@@ -6207,10 +6207,9 @@ function clearGroup(group) {
       const t = e.touches[0];
       longPressStartX = t.clientX;
       longPressStartY = t.clientY;
-      lastTouchX = t.clientX;
+            lastTouchX = t.clientX;
       lastTouchY = t.clientY;
-      lastTouchMoveAt = 0;
-            longPressTimer = setTimeout(() => {
+      longPressTimer = setTimeout(() => {
         longPressTimer = null;
         // Просто срабатываем через 450мс от касания под текущими
         // координатами пальца — неважно, куда он успел уехать.
