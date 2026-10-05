@@ -2191,6 +2191,11 @@
 	// пространство, чтобы UI крупнее выглядел. На десктопе — как было.
 	const VIRTUAL_W = 1920;
 	const VIRTUAL_H = 1080;
+	
+	['orientation-overlay', 'card-overlay', 'tablet-overlay', 'deck-overlay', 'victory-overlay'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) document.documentElement.appendChild(el);
+});
 
     const camera = new THREE.PerspectiveCamera(50, VIRTUAL_W / VIRTUAL_H, 0.1, 2000);
     camera.position.set(0, 14, 9);
