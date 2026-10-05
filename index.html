@@ -2,12 +2,12 @@
 <html lang="ru">
 <head>
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=1920, user-scalable=no, viewport-fit=cover">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 	<meta name="apple-mobile-web-app-capable" content="yes">
 	<meta name="mobile-web-app-capable" content="yes">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-	<meta name="apple-mobile-web-app-title" content="Игра">
-  <title>Настольная игра — космос</title>
+	<meta name="apple-mobile-web-app-title" content="Воплощения">
+  <title>Воплощения</title>
   <style>
             * {
       box-sizing: border-box;
@@ -19,13 +19,27 @@
       user-select: none;
       -webkit-tap-highlight-color: transparent;
     }
-    html, body {
+        html {
       margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      touch-action: manipulation;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      width: 1920px;
+      height: 1080px;
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: top left;
       overflow: hidden;
       background: #000;
       font-family: monospace;
-      width: 100vw;
-      height: 100vh;
       touch-action: manipulation;
     }
 
@@ -2176,37 +2190,33 @@
     camera.position.set(0, 14, 9);
     camera.lookAt(0, 0, 0);
 
-            const renderer = new THREE.WebGLRenderer({
+                const renderer = new THREE.WebGLRenderer({
       antialias: true,
       preserveDrawingBuffer: true,
       powerPreference: 'high-performance',
     });
+    // Canvas живёт в CSS-координатах виртуального body (1920×1080).
     renderer.domElement.style.display = 'block';
-    renderer.domElement.style.position = 'fixed';
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.top = '0';
+    renderer.domElement.style.left = '0';
+    renderer.setSize(VIRTUAL_W, VIRTUAL_H);
+    camera.aspect = VIRTUAL_W / VIRTUAL_H;
+    camera.updateProjectionMatrix();
 
-    // === Адаптивный рендер с сохранением 16:9 (letterbox) ===
-    // Рендер всегда в пропорции 16:9, но разрешение подстраивается
-    // под реальный экран. На не-16:9 мониторах — чёрные поля по бокам
-    // или сверху/снизу, пропорции сцены не искажаются.
-    const TARGET_ASPECT = VIRTUAL_W / VIRTUAL_H;
-    function updateRendererSize() {
+    // === Масштабирование body под реальный экран ===
+    // Внутреннее пространство всегда 1920×1080, снаружи — как получится.
+    // Пропорции не искажаются, на не-16:9 экранах будут чёрные поля.
+    function fitBodyToScreen() {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      let w, h;
-      if (vw / vh > TARGET_ASPECT) {
-        h = vh;
-        w = vh * TARGET_ASPECT;
-      } else {
-        w = vw;
-        h = vw / TARGET_ASPECT;
-      }
-      renderer.setSize(w, h);
-      renderer.domElement.style.left = ((vw - w) / 2) + 'px';
-      renderer.domElement.style.top  = ((vh - h) / 2) + 'px';
-      camera.aspect = TARGET_ASPECT;
-      camera.updateProjectionMatrix();
+      const scale = Math.min(vw / VIRTUAL_W, vh / VIRTUAL_H);
+      const offsetX = (vw - VIRTUAL_W * scale) / 2;
+      const offsetY = (vh - VIRTUAL_H * scale) / 2;
+      document.body.style.transform =
+        `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
     }
-    updateRendererSize();
+    fitBodyToScreen();
     renderer.shadowMap.enabled = true;
     renderer.localClippingEnabled = true;
     document.body.appendChild(renderer.domElement);
@@ -7911,13 +7921,18 @@ function clearGroup(group) {
     animate();
 
 window.addEventListener('resize', () => {
-  updateRendererSize();
+  fitBodyToScreen();
   if (selectedCardData && selectedCardData.element) {
     showCardActions(selectedCardData.element, selectedCardData.card, selectedCardData.side);
   }
   projectLocationBonusButtons();
   updateDiscardPickButton();
 });
+
+if (screen.orientation && screen.orientation.addEventListener) {
+  screen.orientation.addEventListener('change', fitBodyToScreen);
+}
+window.addEventListener('orientationchange', fitBodyToScreen);
 
     initPieces();
   </script>
