@@ -1351,9 +1351,18 @@
       box-shadow: 0 0 22px rgba(51,221,85,0.95), 0 4px 10px rgba(0,0,0,0.6) !important;
     }
     .location-bonus-btn.active .lb-icon { filter: none; }
+    /* Общий вид disabled-кнопки для обеих команд.
+       Раньше grayscale от красной и жёлтой рамки давал разную яркость
+       серого — теперь задаём единый цвет явно. */
     .location-bonus-btn.disabled {
-      filter: grayscale(1) brightness(0.55);
+      filter: none;
+      border-color: #6b6b6b;
+      background: linear-gradient(135deg, rgba(50,50,50,0.9), rgba(15,15,15,0.75));
+      box-shadow: 0 0 10px rgba(120,120,120,0.45), 0 4px 10px rgba(0,0,0,0.6);
       cursor: not-allowed;
+    }
+    .location-bonus-btn.disabled .lb-icon {
+      filter: grayscale(1) brightness(0.65);
     }
 
     #reveal-cards-layer {
@@ -1794,6 +1803,13 @@
     // html.is-mobile / html.is-touch без медиазапросов.
     document.documentElement.classList.toggle('is-touch', IS_TOUCH);
     document.documentElement.classList.toggle('is-mobile', IS_MOBILE);
+	// Смещение кнопок бонусов локаций вниз на мобилке.
+    // Значение в body-координатах (виртуальный экран 1920×1080).
+    //   0   — без смещения;
+    //   100 — примерно 42 физ. пикселя на телефоне;
+    //   200 — примерно 84 физ. пикселя.
+    // Подбирается на глаз — меняй число и смотри результат.
+    const MOBILE_BONUS_Y_OFFSET = 100;
 
     const BOARD_WIDTH = 20;
     const BOARD_HEIGHT = BOARD_WIDTH / 2.98;
@@ -5117,6 +5133,9 @@ function clearGroup(group) {
 
         function projectLocationBonusButtons() {
       const rect = bodyRectOf(renderer.domElement);
+	  // На мобилке опускаем кнопки бонусов ниже — крупные кнопки
+      // не должны перекрывать жетоны персонажей.
+      const yOffset = IS_MOBILE ? MOBILE_BONUS_Y_OFFSET : 0;
       ['white', 'black'].forEach(side => {
         LOCATION_BONUS_IDS.forEach(locId => {
 		  const btn = locationBonusButtons[side + '_' + locId];
@@ -5129,7 +5148,7 @@ function clearGroup(group) {
           const sx = (vec.x * 0.5 + 0.5) * rect.width + rect.left;
           const sy = (-vec.y * 0.5 + 0.5) * rect.height + rect.top;
           btn.style.left = sx + 'px';
-          btn.style.top  = sy + 'px';
+          btn.style.top  = (sy + yOffset) + 'px';
         });
       });
       if (revealState.active) positionRevealCards();
