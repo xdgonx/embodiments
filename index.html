@@ -80,7 +80,7 @@
     }
     @keyframes ooRotate {
       0%, 100% { transform: rotate(0deg); }
-      50% { transform: rotate(90deg); }
+      50% { transform: rotate(-90deg); }
     }
     @media (orientation: portrait) and (max-width: 900px) {
       #orientation-overlay { display: flex; }
@@ -5923,6 +5923,8 @@ function clearGroup(group) {
 
     function longPressUpdateHover(x, y) {
       const el = document.elementFromPoint(x, y);
+
+      // 1. Иконки персонажей в плашках
       const pieceEl = el && el.closest && el.closest('.piece-option[data-piece-id]');
       if (pieceEl) {
         const p = pieces.find(pp => pp.id === pieceEl.dataset.pieceId);
@@ -5930,11 +5932,30 @@ function clearGroup(group) {
           hoveredPiece = p;
           hoveredCaptain = null;
           hoveredBadgeCard = null;
+          hoveredCard = null;
           updateTabletOverlay();
           updateOverlay();
           return;
         }
       }
+
+      // 2. Любой DOM-элемент с привязанной картой (рука, сброс, колода, вскрытие)
+      let cursor = el;
+      while (cursor && cursor !== document.body) {
+        if (cursor.__card) {
+          hoveredCard = cursor.__card;
+          hoveredPiece = null;
+          hoveredCaptain = null;
+          hoveredBadgeCard = null;
+          updateTabletOverlay();
+          updateOverlay();
+          return;
+        }
+        cursor = cursor.parentElement;
+      }
+
+      // 3. Ничего не нашли — проверяем 3D-сцену
+      hoveredCard = null;
       checkHoverAt(x, y);
       updateTabletOverlay();
       updateOverlay();
@@ -6028,7 +6049,8 @@ function clearGroup(group) {
       updateOverlay();
       updateTabletOverlay();
     });
-    function attachCardHover(el, card) {
+function attachCardHover(el, card) {
+      el.__card = card;
       el.addEventListener('mouseenter', () => { hoveredCard = card; updateOverlay(); });
       el.addEventListener('mouseleave', () => { if (hoveredCard === card) hoveredCard = null; updateOverlay(); });
     }
