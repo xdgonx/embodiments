@@ -1611,6 +1611,20 @@
       width: 72%;
       height: 72%;
     }
+	    /* Крупнее карты в руке для мобильного режима.
+       На телефоне карта 88×124 = ~39×55 физических пикселей,
+       что ниже тач-минимума 44×44. Увеличиваем до 104×146
+       (~46×64 физических) и расширяем зазор между картами. */
+    html.is-mobile .hand-card {
+      width: 104px;
+      height: 146px;
+    }
+    html.is-mobile .slots {
+      gap: 10px;
+    }
+    html.is-mobile .hand-card .fallback .name { font-size: 13px; }
+    html.is-mobile .hand-card .fallback .char { font-size: 10px; }
+    html.is-mobile .hand-card .fallback .icon { font-size: 20px; }
   </style>
 </head>
 <body>
@@ -2246,7 +2260,7 @@
       camera.updateProjectionMatrix();
 
       // Оверлеи, которые должны покрывать физический экран.
-      ['orientation-overlay', 'discard-dim-overlay'].forEach(id => {
+            ['orientation-overlay', 'discard-dim-overlay'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.style.left = (-offsetX / scale) + 'px';
@@ -2256,6 +2270,19 @@
         el.style.width = (vw / scale) + 'px';
         el.style.height = (vh / scale) + 'px';
       });
+
+      // На мобилке прижимаем панели колод и карт к физическим
+      // краям экрана — компенсируем боковые чёрные полосы.
+      const bottomLeftEl  = document.getElementById('bottom-left');
+      const bottomRightEl = document.getElementById('bottom-right');
+      if (IS_MOBILE && offsetX > 0.5) {
+        const comp = (-offsetX / scale) + 'px';
+        if (bottomLeftEl)  bottomLeftEl.style.left  = comp;
+        if (bottomRightEl) bottomRightEl.style.right = comp;
+      } else {
+        if (bottomLeftEl)  bottomLeftEl.style.left  = '';
+        if (bottomRightEl) bottomRightEl.style.right = '';
+      }
     }
 	
 	    // Переводит координаты из системы окна (getBoundingClientRect)
