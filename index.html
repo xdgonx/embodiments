@@ -894,7 +894,12 @@
                               filter 0.25s ease, opacity 0.25s ease;
       user-select: none; flex-shrink: 0;
     }
-    .hand-card:hover { transform: translateY(-10px) scale(1.04); box-shadow: 0 12px 22px rgba(0,0,0,0.75); z-index: 5; }
+        /* Приподнимание карты при наведении — только для мыши.
+       На тач-экранах hover «залипает» после тапа, карта остаётся
+       приподнятой, пока не ткнёшь в другое место. */
+    @media (hover: hover) {
+      .hand-card:hover { transform: translateY(-10px) scale(1.04); box-shadow: 0 12px 22px rgba(0,0,0,0.75); z-index: 5; }
+    }
     .hand-card.playing { transform: translateY(-120px) scale(0.7); opacity: 0; transition: transform 0.4s, opacity 0.4s; }
         .hand-card.selected { border-color: #ffe066; box-shadow: 0 0 18px rgba(255, 224, 102, 0.85); transform: translateY(-10px); z-index: 6; cursor: default; }
     .hand-card.white-card.selected { border-color: #ff5555; box-shadow: 0 0 18px rgba(255, 85, 85, 0.9); }
@@ -941,11 +946,13 @@
   z-index: 6;
 }
 /* Наведение на выбранную карту — оставляем приподнятой, рамка та же */
-.hand-card.discard-pick:hover {
-  transform: translateY(-10px) scale(1.04);
-  border-color: #33dd55 !important;
-  box-shadow: 0 0 24px rgba(51, 221, 85, 1), 0 12px 22px rgba(0,0,0,0.8) !important;
-}
+    @media (hover: hover) {
+      .hand-card.discard-pick:hover {
+        transform: translateY(-10px) scale(1.04);
+        border-color: #33dd55 !important;
+        box-shadow: 0 0 24px rgba(51, 221, 85, 1), 0 12px 22px rgba(0,0,0,0.8) !important;
+      }
+    }
 /* Разные фазы старта — карты дрожат не синхронно */
 .hand-card.trembling:nth-child(1) { animation-delay: -0.00s; }
 .hand-card.trembling:nth-child(2) { animation-delay: -0.15s; }
@@ -954,12 +961,14 @@
 .hand-card.trembling:nth-child(5) { animation-delay: -0.66s; }
 /* Наведение — карта перестаёт дрожать и поднимается как обычно:
    так удобнее целиться кликом */
-.hand-card.trembling:hover {
-  animation: none;
-  transform: translateY(-10px) scale(1.04);
-  box-shadow: 0 12px 22px rgba(0,0,0,0.75);
-  z-index: 5;
-}
+    @media (hover: hover) {
+      .hand-card.trembling:hover {
+        animation: none;
+        transform: translateY(-10px) scale(1.04);
+        box-shadow: 0 12px 22px rgba(0,0,0,0.75);
+        z-index: 5;
+      }
+    }
 /* Выбранная карта — тоже стоит ровно, чтобы было видно, что именно выбрано */
 .hand-card.trembling.selected {
   animation: none;
@@ -6043,6 +6052,25 @@ function clearGroup(group) {
       }
     });
 
+	    // Отключаем встроенный браузерный drag-and-drop для карт и жетонов.
+    // Иначе, если потянуть карту с зажатой кнопкой, она начинает
+    // «прилипать» к курсору и таскается за ним как файл.
+    document.addEventListener('dragstart', (e) => {
+      const el = e.target;
+      const tag = (el && el.tagName || '').toLowerCase();
+      // Разрешаем drag только для текстовых полей (если когда-то появятся).
+      if (tag === 'input' || tag === 'textarea') return;
+      // Разрешаем drag для картинок, которые не являются частью UI игры.
+      // Но всё, что внутри #bottom-left / #bottom-right / панелей — глушим.
+      if (el && el.closest) {
+        if (el.closest('#bottom-left, #bottom-right, .hand-card, .deck-overlay-card, .reveal-card, .discard-mini, .tablet-mirror-card')) {
+          e.preventDefault();
+          return;
+        }
+      }
+      // Общий случай — тоже глушим (в игре drag-and-drop не нужен).
+      e.preventDefault();
+    });
     // Наведение на иконку персонажа в плашках с зажатым Ctrl —
     // показывает планшет персонажа (как при наведении на жетон в 3D).
     document.addEventListener('mouseover', (e) => {
