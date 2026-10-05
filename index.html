@@ -154,26 +154,33 @@
       color: #ff9a9a;
       box-shadow: 0 0 12px rgba(239, 31, 31, 0.45), inset 0 0 8px rgba(239, 31, 31, 0.12);
     }
-    #turn-panel.white-turn #end-turn:hover:not(:disabled) {
-      background: linear-gradient(to bottom, rgba(70,15,15,0.95), rgba(30,0,0,0.9));
-      color: #ffffff;
-      box-shadow: 0 0 18px rgba(239, 31, 31, 0.85), inset 0 0 12px rgba(239, 31, 31, 0.25);
-    }
+	/* Пустой блок — hover для белой команды перенесён в @media (hover: hover) ниже. */
     /* Цвет команды — чёрные (жёлтый) */
     #turn-panel.black-turn #end-turn {
       border: 1px solid #ffc300;
       color: #ffe08a;
       box-shadow: 0 0 12px rgba(255, 195, 0, 0.45), inset 0 0 8px rgba(255, 195, 0, 0.12);
     }
-    #turn-panel.black-turn #end-turn:hover:not(:disabled) {
-      background: linear-gradient(to bottom, rgba(70,55,10,0.95), rgba(30,20,0,0.9));
-      color: #ffffff;
-      box-shadow: 0 0 18px rgba(255, 195, 0, 0.85), inset 0 0 12px rgba(255, 195, 0, 0.25);
-    }
+    /* Пустой блок — hover для чёрной команды перенесён в @media (hover: hover) ниже. */
     #end-turn:disabled {
       opacity: 0.4;
       cursor: not-allowed;
       transform: none;
+    }
+	    /* Hover для кнопки «Завершить ход» — только на устройствах с реальным
+       наведением (мышь). На тач-экранах hover отключён, иначе состояние
+       «залипает» после тапа. */
+    @media (hover: hover) {
+      #turn-panel.white-turn #end-turn:hover:not(:disabled) {
+        background: linear-gradient(to bottom, rgba(70,15,15,0.95), rgba(30,0,0,0.9));
+        color: #ffffff;
+        box-shadow: 0 0 18px rgba(239, 31, 31, 0.85), inset 0 0 12px rgba(239, 31, 31, 0.25);
+      }
+      #turn-panel.black-turn #end-turn:hover:not(:disabled) {
+        background: linear-gradient(to bottom, rgba(70,55,10,0.95), rgba(30,20,0,0.9));
+        color: #ffffff;
+        box-shadow: 0 0 18px rgba(255, 195, 0, 0.85), inset 0 0 12px rgba(255, 195, 0, 0.25);
+      }
     }
 
     #end-turn-confirm,
@@ -872,7 +879,7 @@
     }
     .hand-card:hover { transform: translateY(-10px) scale(1.04); box-shadow: 0 12px 22px rgba(0,0,0,0.75); z-index: 5; }
     .hand-card.playing { transform: translateY(-120px) scale(0.7); opacity: 0; transition: transform 0.4s, opacity 0.4s; }
-    .hand-card.selected { border-color: #ffe066; box-shadow: 0 0 18px rgba(255, 224, 102, 0.85); transform: translateY(-10px); z-index: 6; }
+        .hand-card.selected { border-color: #ffe066; box-shadow: 0 0 18px rgba(255, 224, 102, 0.85); transform: translateY(-10px); z-index: 6; cursor: default; }
     .hand-card.white-card.selected { border-color: #ff5555; box-shadow: 0 0 18px rgba(255, 85, 85, 0.9); }
     .hand-card.black-card.selected { border-color: #ffdf77; box-shadow: 0 0 18px rgba(255, 223, 119, 0.9); }
     .hand-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
