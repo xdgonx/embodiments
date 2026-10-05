@@ -1890,6 +1890,19 @@
     gap: 8px;
   }
 }
+/* Кнопка «Сбросить» (↺) в плашке завершения хода — крупнее на мобилке */
+    html.is-mobile #discard-trigger {
+      padding: 10px 16px;
+      border-width: 3px;
+      border-radius: 10px;
+    }
+    html.is-mobile #discard-trigger img {
+      width: 52px;
+      height: 52px;
+    }
+    html.is-mobile #discard-trigger .btn-fallback {
+      font-size: 34px;
+    }
   </style>
 </head>
 <body>
