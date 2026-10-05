@@ -505,11 +505,6 @@
       transform: none;
       box-shadow: none;
     }
-    .lbp-piece-options .piece-option.selected.inactive {
-      border-color: #33dd55 !important;
-      box-shadow: 0 0 16px rgba(51, 221, 85, 0.95), 0 0 30px rgba(51, 221, 85, 0.5) !important;
-      transform: translateY(-3px) scale(1.06);
-    }
 
     .lbp-discard-cards {
       display: flex;
@@ -684,14 +679,6 @@
 	  color: #ffb055;
 	}
 	.lbp-reveal-btn.discard-btn:hover {
-	  background: #3a2200;
-	  color: #fff;
-	}
-	#location-bonus-panel.black-turn .lbp-reveal-btn.discard-btn {
-	  border-color: #ff8800;
-	  color: #ffb055;
-	}
-	#location-bonus-panel.black-turn .lbp-reveal-btn.discard-btn:hover {
 	  background: #3a2200;
 	  color: #fff;
 	}
@@ -1550,6 +1537,31 @@
       .victory-sub { font-size: 11px; margin-bottom: 16px; }
       #victory-restart { padding: 10px 22px; font-size: 13px; }
     }
+	    /* Увеличенные кнопки действий для мобильного режима.
+       Применяется только на телефонах (html.is-mobile ставится из JS
+       при touch + узком экране). На десктопе не срабатывает. */
+    html.is-mobile .action-btn {
+      min-width: 60px;
+      min-height: 60px;
+      padding: 6px 10px;
+    }
+    html.is-mobile .action-btn img {
+      width: 44px;
+      height: 44px;
+    }
+    html.is-mobile #card-actions {
+      gap: 8px;
+    }
+    html.is-mobile .action-btn .btn-fallback {
+      font-size: 32px;
+    }
+    html.is-mobile .action-btn.disabled::after {
+      font-size: 44px;
+    }
+    html.is-mobile .discard-pick-btn {
+      font-size: 13px;
+      padding: 8px 16px;
+    }
   </style>
 </head>
 <body>
@@ -1729,6 +1741,19 @@
 
   <script type="module">
     import * as THREE from 'three';
+
+    // === Определение типа устройства ===
+    // IS_TOUCH — тач-ввод без мыши (телефоны и планшеты).
+    // IS_MOBILE — узкий тач-экран, т.е. собственно телефон.
+    // Совпадение с CSS-медиазапросом: @media (max-width: 1200px), (pointer: coarse).
+    const IS_TOUCH = window.matchMedia('(pointer: coarse)').matches
+                  || window.matchMedia('(hover: none)').matches;
+    const IS_MOBILE = IS_TOUCH && window.matchMedia('(max-width: 1200px)').matches;
+
+    // Классы на <html> — чтобы в CSS можно было писать
+    // html.is-mobile / html.is-touch без медиазапросов.
+    document.documentElement.classList.toggle('is-touch', IS_TOUCH);
+    document.documentElement.classList.toggle('is-mobile', IS_MOBILE);
 
     const BOARD_WIDTH = 20;
     const BOARD_HEIGHT = BOARD_WIDTH / 2.98;
