@@ -6,7 +6,7 @@
 	<meta name="apple-mobile-web-app-capable" content="yes">
 	<meta name="mobile-web-app-capable" content="yes">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-	<meta name="apple-mobile-web-app-title" content="Воплощения">
+	<link rel="apple-touch-icon" href="ui/apple-touch-icon.png">
   <title>Воплощения</title>
   <style>
             * {
@@ -2354,8 +2354,16 @@
       };
     }
 
-    const SESSION_SHUFFLE_KEY = 'ultimatum_shuffle_teams';
-    if (sessionStorage.getItem(SESSION_SHUFFLE_KEY)) shuffleTeams();
+	const SESSION_SHUFFLE_KEY = 'ultimatum_shuffle_teams';
+
+	function safeStorageGet(key) {
+	  try { return sessionStorage.getItem(key); } catch (e) { return null; }
+	}
+	function safeStorageSet(key, value) {
+	  try { sessionStorage.setItem(key, value); } catch (e) { /* private mode */ }
+	}
+
+	if (safeStorageGet(SESSION_SHUFFLE_KEY)) shuffleTeams();
 
     function getMembers(side) { return TEAM_CONFIG[side].members; }
     function getCaptain(side) { return TEAM_CONFIG[side].captain; }
@@ -6169,8 +6177,8 @@ function clearGroup(group) {
         }
       }
       if ((e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') && !e.repeat) {
-        sessionStorage.setItem(SESSION_SHUFFLE_KEY, '1');
-        location.reload();
+			safeStorageSet(SESSION_SHUFFLE_KEY, '1');
+			location.reload();
       }
       if ((e.key === 'g' || e.key === 'G' || e.key === 'п' || e.key === 'П') && !e.repeat) {
         toggleExtras();
@@ -6447,8 +6455,11 @@ function attachCardHover(el, card) {
       // Работает в Android Chrome, когда уже есть fullscreen.
       // На iOS Safari не работает — там оверлей «поверните телефон» подскажет.
       if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('landscape').catch(() => {});
-      }
+	  try {
+		const p = screen.orientation.lock('landscape');
+		if (p && typeof p.catch === 'function') p.catch(() => {});
+	  } catch (e) { /* некоторые браузеры отказывают */ }
+	}
     }
     // Fullscreen только при первом тач-контакте (мобилки).
     // На ПК (клик мышью) — не включаем.
@@ -7769,9 +7780,9 @@ function attachCardHover(el, card) {
     }
 
     document.getElementById('victory-restart').addEventListener('click', () => {
-      sessionStorage.setItem(SESSION_SHUFFLE_KEY, '1');
-      location.reload();
-    });
+	  safeStorageSet(SESSION_SHUFFLE_KEY, '1');
+	  location.reload();
+	});
 
     renderer.domElement.addEventListener('click', (e) => {
       if (bonus5State.active) {
