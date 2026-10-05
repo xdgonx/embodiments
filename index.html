@@ -4975,18 +4975,25 @@ function clearGroup(group) {
       positionRevealCards();
     }
 
-    function positionRevealCards() {
+        function positionRevealCards() {
       if (!revealState.active) return;
       if (revealCardElements.length === 0) return;
       const side = revealState.side;
       const deckEl = document.getElementById(side === 'white' ? 'white-deck-visual' : 'black-deck-visual');
       if (!deckEl) return;
 
-      const rect = deckEl.getBoundingClientRect();
+      // #reveal-cards-layer лежит внутри body (transform: scale),
+      // значит position: absolute у .reveal-card — это body-координаты.
+      // bodyRectOf переводит viewport → body, getBoundingClientRect — наоборот.
+      const rect = bodyRectOf(deckEl);
 
+      // Размер карты: getBoundingClientRect даёт физические пиксели,
+      // делим на scale — получаем body-координаты.
+      const vh = document.documentElement.clientHeight || window.innerHeight;
+      const scale = Math.min(window.innerWidth / VIRTUAL_W, vh / VIRTUAL_H);
       const firstRect = revealCardElements[0].getBoundingClientRect();
-      const cardW = firstRect.width  || 110;
-      const cardH = firstRect.height || 156;
+      const cardW = (firstRect.width  || 110) / scale;
+      const cardH = (firstRect.height || 156) / scale;
       const gap = Math.max(6, cardW * 0.11);
 
       const cx = rect.left + rect.width / 2;
