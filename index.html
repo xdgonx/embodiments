@@ -112,23 +112,6 @@
     }
     #discard-right .header { color: #ffc300; font-size: 12px; text-align: center; margin-top: 8px; letter-spacing: 0.5px; }
     #discard-right .header .count { color: #ffffff; font-size: 13px; font-weight: bold; margin-left: 4px; }
-    #toggle-extras {
-      position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
-      z-index: 20; display: inline-block; padding: 6px 14px;
-      font-family: monospace; font-size: 11px; letter-spacing: 0.8px;
-      cursor: pointer; border-radius: 20px;
-      background: rgba(10, 10, 20, 0.75); color: #ffffff;
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), inset 0 0 8px rgba(255,255,255,0.05);
-      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-      user-select: none;
-    }
-    #toggle-extras:hover {
-      background: rgba(30, 30, 45, 0.9);
-      border-color: rgba(255, 255, 255, 0.5);
-      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.75), inset 0 0 10px rgba(255,255,255,0.1);
-    }
-    #toggle-extras .extras-state { font-weight: bold; color: #ffffff; }
     #turn-panel {
       position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
       background: linear-gradient(to top, rgba(60,10,10,0.9), rgba(0,0,0,0.55));
@@ -1451,8 +1434,6 @@
     #end-turn-confirm .etc-sub, #location-bonus-panel .lbp-sub, #explore-confirm .ec-sub, #bonus2-confirm .b2c-sub,
     #move-confirm .mc-sub, #mirror-confirm .mc-sub { font-size: clamp(10px, 0.65vw, 11px); }
 
-    #toggle-extras { font-size: clamp(10px, 0.65vw, 11px); padding: 5px 12px; }
-
     /* Затемнение экрана в режиме сброса — фокус на руке игрока.
        Панели сброса/колод/плашка конца хода имеют z-index 10+ и остаются поверх. */
     #discard-dim-overlay {
@@ -1631,6 +1612,20 @@
     html.is-mobile .hand-block {
       padding-bottom: 56px;
     }
+	    /* На мобилке панель хода переносим наверх — внизу она
+       перекрывает карты в руке и кнопку зерцала. */
+    html.is-mobile #turn-panel {
+      top: 0;
+      bottom: auto;
+      border-top: none;
+      border-bottom: 2px solid #ef1f1f;
+      border-radius: 0 0 12px 12px;
+      box-shadow: 0 6px 22px rgba(239,31,31,0.35), inset 0 0 14px rgba(239,31,31,0.10);
+    }
+    html.is-mobile #turn-panel.black-turn {
+      border-bottom-color: #ffc300;
+      box-shadow: 0 6px 22px rgba(255,195,0,0.35), inset 0 0 14px rgba(255,195,0,0.10);
+    }
   </style>
 </head>
 <body>
@@ -1667,10 +1662,6 @@
     <div id="black-discard-slots" class="discard-slots-row"></div>
     <div class="header">Сброс чёрных <span class="count" id="black-discard-count">0</span></div>
   </div>
-
-  <button id="toggle-extras" title="Показать/скрыть слоты дополнений (G)">
-    Дополнения: <span class="extras-state" id="extras-state-label">вкл</span>
-  </button>
 
   <div id="bottom-left">
     <div class="deck-block">
