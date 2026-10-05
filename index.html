@@ -1626,6 +1626,66 @@
       border-bottom-color: #ffc300;
       box-shadow: 0 6px 22px rgba(255,195,0,0.35), inset 0 0 14px rgba(255,195,0,0.10);
     }
+	    /* Увеличенные тексты для мобильного режима.
+       Все правки касаются только телефонов — десктоп не затронут. */
+    /* Заголовки плашек */
+    html.is-mobile #end-turn-confirm .etc-title,
+    html.is-mobile #location-bonus-panel .lbp-title,
+    html.is-mobile #explore-confirm .ec-title,
+    html.is-mobile #bonus2-confirm .b2c-title,
+    html.is-mobile #move-confirm .mc-title,
+    html.is-mobile #attack-confirm .mc-title,
+    html.is-mobile #mirror-confirm .mc-title {
+      font-size: 15px;
+      margin-bottom: 8px;
+    }
+    /* Подзаголовки плашек */
+    html.is-mobile #end-turn-confirm .etc-sub,
+    html.is-mobile #location-bonus-panel .lbp-sub,
+    html.is-mobile #explore-confirm .ec-sub,
+    html.is-mobile #bonus2-confirm .b2c-sub,
+    html.is-mobile #move-confirm .mc-sub,
+    html.is-mobile #mirror-confirm .mc-sub {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    /* Подписи над секциями внутри плашек ("АТАКУЮЩИЙ:", "ЦЕЛЬ:" и т.п.) */
+    html.is-mobile .ac-label {
+      font-size: 12px;
+      letter-spacing: 0.8px;
+    }
+    /* Заголовок "ВЫБЕРИТЕ ПЕРСОНАЖА:" и подсказки */
+    html.is-mobile .lbp-piece-choice .lbp-piece-title,
+    html.is-mobile .lbp-piece-choice .lbp-piece-hint {
+      font-size: 12px;
+      letter-spacing: 0.6px;
+    }
+    /* Заголовки колод ("Колода: 15") */
+    html.is-mobile .deck-label {
+      font-size: 15px;
+      padding: 5px 14px;
+    }
+    /* Заголовки рук ("Рука белых · Сыграно: 0 / 4") */
+    html.is-mobile .hand-header {
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    /* Панель хода */
+    html.is-mobile #turn-label {
+      font-size: 17px;
+    }
+    html.is-mobile #turn-number {
+      font-size: 13px;
+    }
+    /* Панели сброса */
+    html.is-mobile #discard-left .header,
+    html.is-mobile #discard-right .header {
+      font-size: 14px;
+    }
+    html.is-mobile #discard-left .header .count,
+    html.is-mobile #discard-right .header .count {
+      font-size: 15px;
+    }
   </style>
 </head>
 <body>
@@ -7685,12 +7745,16 @@ function attachCardHover(el, card) {
       const panelH = actionsEl.offsetHeight || 100;
       const left = rect.left + rect.width / 2 - panelW / 2;
       const top = rect.top - panelH - 10;
-      // На мобилке панели колод и руки прижаты к физическим краям —
-      // карты живут в отрицательных body-координатах, поэтому clamp
-      // должен пускать панель за левую границу body. На десктопе
-      // оставляем защитный отступ в 8px.
+            // На мобилке панели колод и руки прижаты к физическим краям —
+      // карты живут за пределами body-координат (и слева, и справа),
+      // поэтому clamp пускает панель за обе границы body.
+      // На десктопе — защитный отступ 8px с обеих сторон.
       const minLeft = IS_MOBILE ? -300 : 8;
-      actionsEl.style.left = Math.max(minLeft, left) + 'px';
+      const maxLeft = IS_MOBILE
+        ? (VIRTUAL_W + 300 - panelW)
+        : (VIRTUAL_W - panelW - 8);
+      const clampedLeft = Math.min(maxLeft, Math.max(minLeft, left));
+      actionsEl.style.left = clampedLeft + 'px';
       actionsEl.style.top = Math.max(8, top) + 'px';
       mirrorActionEl.classList.add('visible');
       mirrorActionEl.style.left = (rect.left + rect.width / 2) + 'px';
