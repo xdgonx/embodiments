@@ -67,16 +67,16 @@
       animation: ooRotate 1.8s ease-in-out infinite;
     }
     #orientation-overlay .oo-title {
-      font-size: clamp(18px, 4vmin, 40px);
+      font-size: 22px;
       font-weight: bold;
       letter-spacing: 1px;
       color: #ff8888;
     }
     #orientation-overlay .oo-text {
-      font-size: clamp(11px, 2vmin, 22px);
+      font-size: 13px;
       color: #aaa;
       line-height: 1.6;
-      max-width: clamp(320px, 60vmin, 560px);
+      max-width: 320px;
     }
     @keyframes ooRotate {
       0%, 100% { transform: rotate(0deg); }
@@ -1650,6 +1650,74 @@
     @media (max-width: 300px) {
       #small-screen-notice { display: flex; }
     }
+	
+	    /* ===== МОБИЛЬНЫЙ РЕЖИМ: всё крупнее на телефоне ===== */
+    @media (max-width: 1200px) {
+      .hand-card {
+        width: 150px !important;
+        height: 213px !important;
+      }
+      .hand-card .fallback .name { font-size: 16px !important; }
+      .hand-card .fallback .char { font-size: 11px !important; }
+      .hand-card .fallback .icon { font-size: 22px !important; }
+      .slots { gap: 0 !important; }
+      .slots > .hand-card:not(:first-child) { margin-left: -65px !important; }
+
+      .deck-visual { width: 130px !important; height: 182px !important; }
+      .deck-layer { height: 182px !important; }
+      .deck-label { font-size: 14px !important; padding: 5px 12px !important; }
+
+      .hand-header { font-size: 14px !important; }
+      .hand-block { padding: 8px 14px 46px !important; }
+
+      .discard-stack .discard-mini { width: 60px !important; height: 84px !important; }
+      .discard-stack { width: 60px !important; }
+
+      #discard-left, #discard-right { min-width: 260px !important; padding: 14px 20px !important; }
+      #discard-left .header, #discard-right .header { font-size: 14px !important; margin-top: 10px !important; }
+      #discard-left .header .count, #discard-right .header .count { font-size: 16px !important; }
+      .discard-slots-row { min-height: 96px !important; gap: 10px !important; }
+
+      #turn-panel { min-width: 300px !important; padding: 14px 24px 18px !important; }
+      #turn-label { font-size: 18px !important; margin-bottom: 4px !important; }
+      #turn-number { font-size: 13px !important; margin-bottom: 10px !important; }
+      #end-turn { font-size: 15px !important; padding: 12px 20px !important; }
+
+      #toggle-extras { font-size: 13px !important; padding: 8px 16px !important; }
+
+      #bottom-left, #bottom-right { gap: 14px !important; }
+      .deck-block { padding: 10px 14px 18px !important; }
+
+      #end-turn-confirm, #location-bonus-panel, #explore-confirm, #bonus2-confirm,
+      #move-confirm, #attack-confirm, #mirror-confirm {
+        bottom: 180px !important;
+        min-width: 340px !important;
+        max-width: 480px !important;
+        padding: 16px 24px 18px !important;
+      }
+      #end-turn-confirm .etc-title, #location-bonus-panel .lbp-title,
+      #explore-confirm .ec-title, #bonus2-confirm .b2c-title,
+      #move-confirm .mc-title, #attack-confirm .mc-title, #mirror-confirm .mc-title { font-size: 16px !important; }
+      #end-turn-confirm .etc-sub, #location-bonus-panel .lbp-sub,
+      #explore-confirm .ec-sub, #bonus2-confirm .b2c-sub,
+      #move-confirm .mc-sub, #attack-confirm .mc-sub, #mirror-confirm .mc-sub { font-size: 13px !important; }
+
+      .location-bonus-btn {
+        width: 90px !important;
+        height: 68px !important;
+        margin-left: -45px !important;
+        margin-top: -34px !important;
+      }
+
+      .reveal-card { width: 150px !important; height: 213px !important; }
+
+      .mirror-field-reminder {
+        width: 60px !important;
+        height: 84px !important;
+        margin-left: -30px !important;
+        margin-top: -42px !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -2188,9 +2256,8 @@
     // независимо от реального разрешения устройства.
 	// На узких экранах (мобилки) используем меньшее виртуальное
 	// пространство, чтобы UI крупнее выглядел. На десктопе — как было.
-	const IS_MOBILE = window.innerWidth < 1200;
-	const VIRTUAL_W = IS_MOBILE ? 1360 : 1920;
-	const VIRTUAL_H = IS_MOBILE ? 765  : 1080;
+	const VIRTUAL_W = 1920;
+	const VIRTUAL_H = 1080;
 
     const camera = new THREE.PerspectiveCamera(50, VIRTUAL_W / VIRTUAL_H, 0.1, 2000);
     camera.position.set(0, 14, 9);
