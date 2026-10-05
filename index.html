@@ -7675,13 +7675,18 @@ function attachCardHover(el, card) {
 	  const canMirror = targetPiece && getMirrorTargets(targetPiece).length > 0;
 	  if (actionMirrorBtn) actionMirrorBtn.classList.toggle('disabled', !canMirror);
 
-      const rect = bodyRectOf(cardElement);
+            const rect = bodyRectOf(cardElement);
       actionsEl.classList.add('visible');
       const panelW = actionsEl.offsetWidth || 200;
       const panelH = actionsEl.offsetHeight || 100;
       const left = rect.left + rect.width / 2 - panelW / 2;
       const top = rect.top - panelH - 10;
-      actionsEl.style.left = Math.max(8, left) + 'px';
+      // На мобилке панели колод и руки прижаты к физическим краям —
+      // карты живут в отрицательных body-координатах, поэтому clamp
+      // должен пускать панель за левую границу body. На десктопе
+      // оставляем защитный отступ в 8px.
+      const minLeft = IS_MOBILE ? -300 : 8;
+      actionsEl.style.left = Math.max(minLeft, left) + 'px';
       actionsEl.style.top = Math.max(8, top) + 'px';
       mirrorActionEl.classList.add('visible');
       mirrorActionEl.style.left = (rect.left + rect.width / 2) + 'px';
