@@ -1625,6 +1625,12 @@
     html.is-mobile .hand-card .fallback .name { font-size: 13px; }
     html.is-mobile .hand-card .fallback .char { font-size: 10px; }
     html.is-mobile .hand-card .fallback .icon { font-size: 20px; }
+	    /* Поднимаем панель руки, чтобы кнопка зерцала (Z),
+       которая рисуется ПОД картой, полностью влезала на экран.
+       Без этого на мобилке Z уходит за нижний край. */
+    html.is-mobile .hand-block {
+      padding-bottom: 88px;
+    }
   </style>
 </head>
 <body>
