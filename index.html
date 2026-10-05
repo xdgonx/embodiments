@@ -6104,7 +6104,6 @@ function clearGroup(group) {
     // Для слежения за пальцем между touchstart и touchmove.
     let lastTouchX = 0;
     let lastTouchY = 0;
-    let lastTouchMoveAt = 0;
     const LONG_PRESS_MS = 450;
     const LONG_PRESS_MOVE_TOLERANCE = 12;
 	    // Long press нужен только для карт, жетонов и игрового поля
@@ -6196,32 +6195,25 @@ function clearGroup(group) {
       lastTouchX = t.clientX;
       lastTouchY = t.clientY;
       lastTouchMoveAt = 0;
-      longPressTimer = setTimeout(() => {
+            longPressTimer = setTimeout(() => {
         longPressTimer = null;
-        // Если палец двигался в последние 120мс — это похоже на свайп
-        // или скролл. Не запускаем long press, чтобы не мешать.
-        const sinceMove = lastTouchMoveAt ? Date.now() - lastTouchMoveAt : Infinity;
-        if (sinceMove < 120) return;
+        // Просто срабатываем через 450мс от касания под текущими
+        // координатами пальца — неважно, куда он успел уехать.
         longPressEnter(lastTouchX, lastTouchY);
       }, LONG_PRESS_MS);
     }, { passive: true });
 
-        document.addEventListener('touchmove', (e) => {
+            document.addEventListener('touchmove', (e) => {
       const t = e.touches[0];
       if (!t) return;
       lastTouchX = t.clientX;
       lastTouchY = t.clientY;
-      lastTouchMoveAt = Date.now();
       if (longPressActive) {
         // В режиме длинного нажатия — обновляем цель и запрещаем скролл.
         longPressUpdateHover(t.clientX, t.clientY);
         e.preventDefault();
-        return;
       }
-      // Раньше здесь был clearTimeout при сдвиге > 12px. Это мешало
-      // сценарию «зажал палец и повёл на карту» — таймер отменялся
-      // до срабатывания. Теперь таймер не трогаем; проверка на свайп
-      // делается в самом setTimeout (см. выше).
+      // Таймер не трогаем — он уже тикает от touchstart.
     }, { passive: false });
 
     document.addEventListener('touchend', () => {
