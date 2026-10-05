@@ -62,7 +62,7 @@
       padding: 24px;
     }
     #orientation-overlay .oo-icon {
-      font-size: clamp(56px, 12vmin, 140px);
+      font-size: 72px;
       opacity: 0.85;
       animation: ooRotate 1.8s ease-in-out infinite;
     }
@@ -2186,8 +2186,11 @@
     scene.background = new THREE.Color(0x000008);
         // Фиксированный виртуальный экран — игра всегда рисуется в этих пропорциях,
     // независимо от реального разрешения устройства.
-    const VIRTUAL_W = 1920;
-    const VIRTUAL_H = 1080;
+	// На узких экранах (мобилки) используем меньшее виртуальное
+	// пространство, чтобы UI крупнее выглядел. На десктопе — как было.
+	const IS_MOBILE = window.innerWidth < 1200;
+	const VIRTUAL_W = IS_MOBILE ? 1360 : 1920;
+	const VIRTUAL_H = IS_MOBILE ? 765  : 1080;
 
     const camera = new THREE.PerspectiveCamera(50, VIRTUAL_W / VIRTUAL_H, 0.1, 2000);
     camera.position.set(0, 14, 9);
