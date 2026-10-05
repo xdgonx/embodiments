@@ -3183,16 +3183,27 @@ function clearGroup(group) {
     }
     // Спрайт сердечка для HP на поле.
     // Файл: ui/hearts/heart.png
-    const HEART_SPRITE_PATH = 'ui/hearts/heart.png';
-    let HEART_SPRITE_IMAGE = null;
-    loadImage(HEART_SPRITE_PATH)
-      .then(img => {
-        HEART_SPRITE_IMAGE = img;
-        // Перерисовать все уже созданные hp-спрайты (если они успели появиться)
-        pieces.forEach(p => updateHpDisplay(p));
-      })
-      .catch(err => console.warn('Спрайт сердца не загружен, останется векторная отрисовка:', err));
+    const HEART_SPRITE_PATH      = 'ui/hearts/heart.png';
+const HEART_SPRITE_DARK_PATH = 'ui/hearts/heart_dark.png';
+let HEART_SPRITE_IMAGE      = null;   // полное сердечко
+let HEART_SPRITE_DARK_IMAGE = null;   // пустое (заранее нарисованное)
 
+// Полное сердечко — обязательно, без него остаётся векторный fallback.
+loadImage(HEART_SPRITE_PATH)
+  .then(img => {
+    HEART_SPRITE_IMAGE = img;
+    pieces.forEach(p => updateHpDisplay(p));
+  })
+  .catch(err => console.warn('Спрайт сердца не загружен, останется векторная отрисовка:', err));
+
+// Пустое сердечко — необязательно: если файла нет, пустые слоты
+// будут рисоваться цветным спрайтом (но это уже не критично).
+loadImage(HEART_SPRITE_DARK_PATH)
+  .then(img => {
+    HEART_SPRITE_DARK_IMAGE = img;
+    pieces.forEach(p => updateHpDisplay(p));
+  })
+  .catch(err => console.warn('Тёмный спрайт сердца не загружен:', err));
     // Значок исследования для пузырьков могущества (бонус 5 локации).
     // Используется тот же файл, что на кнопке действия «Исследовать».
     const EXPLORE_ICON_PATH = 'ui/explore.png';
@@ -3219,77 +3230,61 @@ function clearGroup(group) {
     let pendingEndTurnAfterOrbs = false;
 
     function drawHpBar(canvas, hp, maxHp, opts = {}) {
-      const tightFit = !!opts.tightFit;
+  const tightFit = !!opts.tightFit;
 
-      // В tightFit-режиме подгоняем размер сердца так, чтобы
-      // суммарная ширина плашки была примерно одинаковой при любом maxHp
-      const baseHeartSize = 150;
-      const baseCount = 4;
-      const heartSize = tightFit
-        ? Math.max(50, Math.round(baseHeartSize * baseCount / Math.max(1, maxHp)))
-        : baseHeartSize;
-      const gap = Math.round(-heartSize / 6);
+  const baseHeartSize = 150;
+  const baseCount = 4;
+  const heartSize = tightFit
+    ? Math.max(50, Math.round(baseHeartSize * baseCount / Math.max(1, maxHp)))
+    : baseHeartSize;
+  const gap = Math.round(-heartSize / 6);
 
-      const totalW = maxHp * heartSize + (maxHp - 1) * gap;
-      const padding = 20;    // по 10 px с каждой стороны — запас под свечение спрайта
+  const totalW = maxHp * heartSize + (maxHp - 1) * gap;
+  const padding = 20;
 
-      if (tightFit) {
-        canvas.width = Math.ceil(totalW + padding);
-        canvas.height = Math.round(heartSize + 20);
-      }
+  if (tightFit) {
+    canvas.width = Math.ceil(totalW + padding);
+    canvas.height = Math.round(heartSize + 20);
+  }
 
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const startX = (canvas.width - totalW) / 2;
-      const cy = canvas.height / 2;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const startX = (canvas.width - totalW) / 2;
+  const cy = canvas.height / 2;
 
-      for (let i = 0; i < maxHp; i++) {
-        const cx = startX + i * (heartSize + gap) + heartSize / 2;
-        const filled = i < hp;
+  for (let i = 0; i < maxHp; i++) {
+    const cx = startX + i * (heartSize + gap) + heartSize / 2;
+    const filled = i < hp;
 
-        if (HEART_SPRITE_IMAGE) {
-          const drawSize = heartSize + 20;
-          ctx.save();
-          if (filled) {
-            const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, drawSize * 0.48);
-            grad.addColorStop(0.00, 'rgba(255, 105, 180, 0.95)');
-            grad.addColorStop(0.55, 'rgba(255, 105, 180, 0.55)');
-            grad.addColorStop(1.00, 'rgba(255, 105, 180, 0)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(cx - drawSize / 2, cy - drawSize / 2, drawSize, drawSize);
-            ctx.drawImage(
-              HEART_SPRITE_IMAGE,
-              cx - drawSize / 2,
-              cy - drawSize / 2,
-              drawSize,
-              drawSize
-            );
-          } else {
-            ctx.save();
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-            drawHeartShape(ctx, cx, cy, heartSize / 2 + 2);
-            ctx.fill();
-            ctx.restore();
+    if (HEART_SPRITE_IMAGE) {
+  const drawSize = heartSize + 20;
+  const srcImage = filled
+    ? HEART_SPRITE_IMAGE
+    : (HEART_SPRITE_DARK_IMAGE || HEART_SPRITE_IMAGE);
 
-            ctx.globalAlpha = 1.0;
-            ctx.filter = 'grayscale(1) brightness(0.5) contrast(1.15)';
-            ctx.drawImage(
-              HEART_SPRITE_IMAGE,
-              cx - drawSize / 2,
-              cy - drawSize / 2,
-              drawSize,
-              drawSize
-            );
-          }
-          ctx.restore();
-        } else {
-          drawHeartShape(ctx, cx, cy, heartSize / 2 + 6); ctx.fillStyle = '#ffffff'; ctx.fill();
-          drawHeartShape(ctx, cx, cy, heartSize / 2 + 3); ctx.fillStyle = '#000000'; ctx.fill();
-          drawHeartShape(ctx, cx, cy, heartSize / 2); ctx.fillStyle = filled ? '#ff69b4' : '#c8c8c8'; ctx.fill();
-          drawHeartShape(ctx, cx, cy, heartSize / 2); ctx.lineWidth = 5; ctx.strokeStyle = filled ? '#7a0a3a' : '#555555'; ctx.stroke();
-        }
-      }
-    }
+  if (filled) {
+    // Розовое свечение под полным сердечком
+    ctx.save();
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, drawSize * 0.48);
+    grad.addColorStop(0.00, 'rgba(255, 105, 180, 0.95)');
+    grad.addColorStop(0.55, 'rgba(255, 105, 180, 0.55)');
+    grad.addColorStop(1.00, 'rgba(255, 105, 180, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx - drawSize / 2, cy - drawSize / 2, drawSize, drawSize);
+    ctx.restore();
+  }
+
+  ctx.drawImage(
+    srcImage,
+    cx - drawSize / 2,
+    cy - drawSize / 2,
+    drawSize,
+    drawSize
+  );
+}
+  }
+}
+    
     // ============ МИГАНИЕ HP ПРИ ВЫБОРЕ ЦЕЛИ АТАКИ ============
     const hpBlinkState = {
       piece: null,
@@ -5580,7 +5575,7 @@ function clearGroup(group) {
       [
         'ui/move.png', 'ui/attack.png', 'ui/explore.png', 'ui/spell.png',
         'ui/mirror.png', 'ui/reset.png', 'ui/death.png', 'ui/mid.png',
-        'ui/hearts/heart.png',
+        'ui/hearts/heart.png','ui/hearts/heart_dark.png',
       ].forEach(p => paths.add(p));
 
       // Сердечки планшетов
