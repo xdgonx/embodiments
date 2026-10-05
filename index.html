@@ -9,7 +9,16 @@
 	<meta name="apple-mobile-web-app-title" content="Игра">
   <title>Настольная игра — космос</title>
   <style>
-        * { box-sizing: border-box; }
+            * {
+      box-sizing: border-box;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      -khtml-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
     html, body {
       margin: 0;
       overflow: hidden;
@@ -17,16 +26,49 @@
       font-family: monospace;
       width: 100vw;
       height: 100vh;
+      touch-action: manipulation;
     }
 
-    /* Принудительный ландшафт: если телефон в портрете — поворачиваем всё на 90° */
-    @media (orientation: portrait) {
-      html, body {
-        width: 100vh;
-        height: 100vw;
-        transform-origin: top left;
-        transform: rotate(90deg) translateY(-100%);
-      }
+        /* Портретная ориентация — показываем оверлей «поверни телефон».
+       Поворот через CSS не работает: position:fixed-элементы игнорируют transform. */
+    #orientation-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000000;
+      background: radial-gradient(circle at 50% 40%, #1a1a2e 0%, #000 80%);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 20px;
+      text-align: center;
+      font-family: monospace;
+      color: #eee;
+      padding: 24px;
+    }
+    #orientation-overlay .oo-icon {
+      font-size: 72px;
+      opacity: 0.85;
+      animation: ooRotate 1.8s ease-in-out infinite;
+    }
+    #orientation-overlay .oo-title {
+      font-size: 22px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      color: #ff8888;
+    }
+    #orientation-overlay .oo-text {
+      font-size: 13px;
+      color: #aaa;
+      line-height: 1.6;
+      max-width: 320px;
+    }
+    @keyframes ooRotate {
+      0%, 100% { transform: rotate(0deg); }
+      50% { transform: rotate(90deg); }
+    }
+    @media (orientation: portrait) and (max-width: 900px) {
+      #orientation-overlay { display: flex; }
     }
     canvas { display: block; }
     #discard-left {
@@ -1755,8 +1797,14 @@
   <div id="mirror-field-reminders"></div>
   <div id="reveal-cards-layer"></div>
 
-  <div id="discard-dim-overlay"></div>
+    <div id="discard-dim-overlay"></div>
   <button id="discard-pick-btn" class="discard-pick-btn hidden">Сбросить</button>
+
+  <div id="orientation-overlay">
+    <div class="oo-icon">📱</div>
+    <div class="oo-title">Поверните телефон</div>
+    <div class="oo-text">Для игры нужен горизонтальный режим — держите телефон боком.</div>
+  </div>
 
   <script type="importmap">
   { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -2112,7 +2160,7 @@
     let gameOver = false;
 
     const might = { white: 9, black: 10 };
-    let extrasVisible = true;
+    let extrasVisible = false;
     const discardMode    = { white: false, black: false };
     const discardLocked  = { white: false, black: false };
     const discardPickUid = { white: null,  black: null  };
@@ -2128,12 +2176,37 @@
     camera.position.set(0, 14, 9);
     camera.lookAt(0, 0, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(VIRTUAL_W, VIRTUAL_H);
-    // Канвас растягивается на весь реальный экран через CSS.
-    renderer.domElement.style.width = '100vw';
-    renderer.domElement.style.height = '100vh';
+            const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      preserveDrawingBuffer: true,
+      powerPreference: 'high-performance',
+    });
     renderer.domElement.style.display = 'block';
+    renderer.domElement.style.position = 'fixed';
+
+    // === Адаптивный рендер с сохранением 16:9 (letterbox) ===
+    // Рендер всегда в пропорции 16:9, но разрешение подстраивается
+    // под реальный экран. На не-16:9 мониторах — чёрные поля по бокам
+    // или сверху/снизу, пропорции сцены не искажаются.
+    const TARGET_ASPECT = VIRTUAL_W / VIRTUAL_H;
+    function updateRendererSize() {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let w, h;
+      if (vw / vh > TARGET_ASPECT) {
+        h = vh;
+        w = vh * TARGET_ASPECT;
+      } else {
+        w = vw;
+        h = vw / TARGET_ASPECT;
+      }
+      renderer.setSize(w, h);
+      renderer.domElement.style.left = ((vw - w) / 2) + 'px';
+      renderer.domElement.style.top  = ((vh - h) / 2) + 'px';
+      camera.aspect = TARGET_ASPECT;
+      camera.updateProjectionMatrix();
+    }
+    updateRendererSize();
     renderer.shadowMap.enabled = true;
     renderer.localClippingEnabled = true;
     document.body.appendChild(renderer.domElement);
@@ -5717,6 +5790,115 @@ function clearGroup(group) {
         updateOverlay();
       }
     });
+
+    // === Длинное нажатие на тач-экране = Ctrl (показать планшет) ===
+    let longPressTimer = null;
+    let longPressActive = false;
+    let longPressStartX = 0;
+    let longPressStartY = 0;
+    let suppressNextClick = false;
+    const LONG_PRESS_MS = 450;
+    const LONG_PRESS_MOVE_TOLERANCE = 12;
+
+    function longPressUpdateHover(x, y) {
+      const el = document.elementFromPoint(x, y);
+      const pieceEl = el && el.closest && el.closest('.piece-option[data-piece-id]');
+      if (pieceEl) {
+        const p = pieces.find(pp => pp.id === pieceEl.dataset.pieceId);
+        if (p) {
+          hoveredPiece = p;
+          hoveredCaptain = null;
+          hoveredBadgeCard = null;
+          updateTabletOverlay();
+          updateOverlay();
+          return;
+        }
+      }
+      checkHoverAt(x, y);
+      updateTabletOverlay();
+      updateOverlay();
+    }
+
+    function longPressEnter(x, y) {
+      longPressActive = true;
+      ctrlPressed = true;
+      document.body.classList.add('ctrl-mode');
+      // Принудительная перерисовка стилей, чтобы elementFromPoint
+      // учёл pointer-events: auto на .piece-option
+      void document.body.offsetHeight;
+      longPressUpdateHover(x, y);
+    }
+
+    function longPressExit() {
+      if (!longPressActive) return;
+      longPressActive = false;
+      ctrlPressed = false;
+      document.body.classList.remove('ctrl-mode');
+      hoveredPiece = null;
+      hoveredCaptain = null;
+      hoveredBadgeCard = null;
+      updateTabletOverlay();
+      updateOverlay();
+    }
+
+    document.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      if (longPressActive) return;
+      const t = e.touches[0];
+      longPressStartX = t.clientX;
+      longPressStartY = t.clientY;
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        longPressEnter(t.clientX, t.clientY);
+      }, LONG_PRESS_MS);
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+      const t = e.touches[0];
+      if (!t) return;
+      if (longPressActive) {
+        // В режиме длинного нажатия — обновляем цель и запрещаем скролл
+        longPressUpdateHover(t.clientX, t.clientY);
+        e.preventDefault();
+        return;
+      }
+      if (longPressTimer) {
+        const dx = t.clientX - longPressStartX;
+        const dy = t.clientY - longPressStartY;
+        if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_TOLERANCE) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+    }, { passive: false });
+
+    document.addEventListener('touchend', () => {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      if (longPressActive) {
+        suppressNextClick = true;
+        longPressExit();
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchcancel', () => {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      longPressExit();
+    });
+
+    // Гасим синтетический click, который браузер шлёт сразу после touchend
+    document.addEventListener('click', (e) => {
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }, true);
         window.addEventListener('blur', () => {
       ctrlPressed = false;
       document.body.classList.remove('ctrl-mode');
@@ -5746,13 +5928,16 @@ function clearGroup(group) {
       if (fn) {
         try { fn.call(el); } catch (e) { /* некоторые браузеры отказывают без причины */ }
       }
-      // Пытаемся залочить ориентацию в ландшафт (работает не везде)
+           // Пытаемся залочить ориентацию в ландшафт.
+      // Работает в Android Chrome, когда уже есть fullscreen.
+      // На iOS Safari не работает — там оверлей «поверните телефон» подскажет.
       if (screen.orientation && screen.orientation.lock) {
         screen.orientation.lock('landscape').catch(() => {});
       }
     }
+    // Fullscreen только при первом тач-контакте (мобилки).
+    // На ПК (клик мышью) — не включаем.
     document.addEventListener('touchstart', tryEnterFullscreen, { once: true });
-    document.addEventListener('click', tryEnterFullscreen, { once: true });
 
     function updateTurnUI() {
       turnPanel.classList.remove('white-turn', 'black-turn');
@@ -7726,7 +7911,7 @@ function clearGroup(group) {
     animate();
 
 window.addEventListener('resize', () => {
-  // aspect фиксирован — просто пересчитываем позиции UI
+  updateRendererSize();
   if (selectedCardData && selectedCardData.element) {
     showCardActions(selectedCardData.element, selectedCardData.card, selectedCardData.side);
   }
