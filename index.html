@@ -3251,41 +3251,64 @@ loadImage(HEART_SPRITE_DARK_PATH)
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const startX = (canvas.width - totalW) / 2;
   const cy = canvas.height / 2;
+  
 
-  for (let i = 0; i < maxHp; i++) {
-    const cx = startX + i * (heartSize + gap) + heartSize / 2;
-    const filled = i < hp;
+	  for (let i = maxHp - 1; i >= 0; i--) {
+	  const cx = startX + i * (heartSize + gap) + heartSize / 2;
+	  const filled = i < hp;
 
-    if (HEART_SPRITE_IMAGE) {
-  const drawSize = heartSize + 20;
-  const srcImage = filled
-    ? HEART_SPRITE_IMAGE
-    : (HEART_SPRITE_DARK_IMAGE || HEART_SPRITE_IMAGE);
+  if (HEART_SPRITE_IMAGE) {
+    const drawSize = heartSize + 20;
+    const srcImage = filled
+        ? HEART_SPRITE_IMAGE
+        : (HEART_SPRITE_DARK_IMAGE || HEART_SPRITE_IMAGE);
 
-  if (filled) {
-    // Розовое свечение под полным сердечком
+    // === ЦВЕТНАЯ ПОДЛОЖКА В ФОРМЕ СЕРДЦА ===
+    // Рисуем форму сердца под спрайтом, чтобы сердечко чётко читалось
+    // на любом фоне. Настройка heartBackR задаёт размер подложки:
+    // больше значение — толще цветной ободок вокруг спрайта.
+    const heartBackR = drawSize * 0.34;
     ctx.save();
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, drawSize * 0.48);
-    grad.addColorStop(0.00, 'rgba(255, 105, 180, 0.95)');
-    grad.addColorStop(0.55, 'rgba(255, 105, 180, 0.55)');
-    grad.addColorStop(1.00, 'rgba(255, 105, 180, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(cx - drawSize / 2, cy - drawSize / 2, drawSize, drawSize);
+    drawHeartShape(ctx, cx, cy - heartBackR * 0.1, heartBackR);
+    if (filled) {
+        // Розово-красная подложка под целыми сердечками
+        ctx.fillStyle = 'rgba(180, 25, 70, 0.95)';
+        ctx.strokeStyle = 'rgba(255, 140, 180, 1.0)';
+    } else {
+        // Чёрная подложка под разбитыми сердечками
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+        // Светлый контур — чтобы чёрное сердечко не сливалось с фоном панели
+        ctx.strokeStyle = 'rgba(190, 190, 210, 0.95)';
+    }
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
     ctx.restore();
-  }
 
-  ctx.drawImage(
-    srcImage,
-    cx - drawSize / 2,
-    cy - drawSize / 2,
-    drawSize,
-    drawSize
-  );
+    if (filled) {
+        // Розовое свечение под целым сердечком (оставляем как было)
+        ctx.save();
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, drawSize * 0.48);
+        grad.addColorStop(0.00, 'rgba(255, 105, 180, 0.95)');
+        grad.addColorStop(0.55, 'rgba(255, 105, 180, 0.55)');
+        grad.addColorStop(1.00, 'rgba(255, 105, 180, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(cx - drawSize / 2, cy - drawSize / 2, drawSize, drawSize);
+        ctx.restore();
+    }
+
+    // Сам спрайт сердечка поверх подложки
+    ctx.drawImage(srcImage, cx - drawSize / 2, cy - drawSize / 2, drawSize, drawSize);
 }
   }
 }
     
     // ============ МИГАНИЕ HP ПРИ ВЫБОРЕ ЦЕЛИ АТАКИ ============
+    // Пока цель выбрана — сердечко мигает между текущим и предсказанным HP.
+    // Как только игрок ПОДТВЕРДИЛ атаку — мигание замирает на «горящей»
+    // фазе (гарантированно показывается предсказанный HP). В момент удара
+    // (doAttackImpact) мигание сбрасывается, показывается реальный HP.
     const hpBlinkState = {
       piece: null,
       realHp: 0,
@@ -3293,6 +3316,7 @@ loadImage(HEART_SPRITE_DARK_PATH)
       phase: 0,
       timer: 0,
       interval: 0.45,
+      locked: false,   // true → мигание остановлено на «горящей» фазе
     };
 
     function startHpBlink(target) {
@@ -3312,10 +3336,26 @@ loadImage(HEART_SPRITE_DARK_PATH)
       hpBlinkState.predictedHp = predicted;
       hpBlinkState.phase = 0;
       hpBlinkState.timer = 0;
+      hpBlinkState.locked = false;
 
       const canvas = target.hpSprite.material.map.image;
       drawHpBar(canvas, target.hp, target.maxHp);
       target.hpSprite.material.map.needsUpdate = true;
+    }
+
+    // Фиксирует сердечко на «зажжённой» (розовой) фазе — то есть
+    // показывает ТЕКУЩИЙ (до удара) HP. Красное остаётся горящим
+    // всё время анимации, а в момент удара stopHpBlink() покажет
+    // уже уменьшенный HP — сердечко «погаснет».
+    function lockHpBlinkHot() {
+      const piece = hpBlinkState.piece;
+      if (!piece) return;
+      hpBlinkState.locked = true;
+      hpBlinkState.phase = 0;             // 0 = реальный (полный) HP
+      hpBlinkState.timer = 0;
+      const canvas = piece.hpSprite.material.map.image;
+      drawHpBar(canvas, hpBlinkState.realHp, piece.maxHp);
+      piece.hpSprite.material.map.needsUpdate = true;
     }
 
     function stopHpBlink() {
@@ -3323,6 +3363,7 @@ loadImage(HEART_SPRITE_DARK_PATH)
       hpBlinkState.piece = null;
       hpBlinkState.phase = 0;
       hpBlinkState.timer = 0;
+      hpBlinkState.locked = false;
       if (piece && piece.hpSprite) {
         const canvas = piece.hpSprite.material.map.image;
         drawHpBar(canvas, piece.hp, piece.maxHp);
@@ -3335,6 +3376,9 @@ loadImage(HEART_SPRITE_DARK_PATH)
       if (!piece) return;
       // Защита: цель больше не выбрана или погибла
       if (piece !== selectedAttackTarget || piece.hp <= 0) { stopHpBlink(); return; }
+      // Атака подтверждена — мигание выключено, показываем ровно
+      // «горящую» фазу до момента удара.
+      if (hpBlinkState.locked) return;
       hpBlinkState.timer += dt;
       if (hpBlinkState.timer >= hpBlinkState.interval) {
         hpBlinkState.timer = 0;
@@ -7611,6 +7655,7 @@ function attachCardHover(el, card) {
   // Снимаем кольцо выделения у атакующего — анимация уже запускается
   pieces.forEach(p => { if (p.selector) p.selector.visible = false; });
 
+	lockHpBlinkHot();   // ← ДОБАВИТЬ: сердце гарантированно «горит»
   startAttackAnimation(attacker, target, cardCopy);
 }
 
