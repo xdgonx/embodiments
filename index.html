@@ -1650,7 +1650,34 @@
     @media (max-width: 300px) {
       #small-screen-notice { display: flex; }
     }
+	
+	    /* Оверлеи вынесены из body и не сжимаются — уменьшаем размеры на телефоне */
+    @media (max-width: 1200px) {
+      .deck-overlay-content {
+        padding: 12px 16px 16px !important;
+        max-width: 94vw !important;
+        max-height: 90vh !important;
+        gap: 8px !important;
+      }
+      .deck-overlay-header { font-size: 13px !important; }
+      .deck-overlay-cards { gap: 6px !important; max-height: 78vh !important; }
+      .deck-overlay-card { width: 62px !important; height: 88px !important; }
 
+      .overlay-card-image { max-width: 82vw !important; max-height: 72vh !important; }
+      .overlay-card-placeholder { width: 140px !important; max-height: 72vh !important; padding: 12px !important; font-size: 9px !important; }
+      .overlay-card-placeholder .slot-icon { font-size: 28px !important; }
+
+      .tablet-wrapper { max-height: 72vh !important; max-width: 72vw !important; }
+      .tablet-wrapper .tablet-image { max-height: 72vh !important; max-width: 72vw !important; }
+      .tablet-side-panel, .card-side-panel { width: 160px !important; max-height: 72vh !important; padding: 12px !important; font-size: 9px !important; }
+      .tablet-side-panel .slot-icon, .card-side-panel .slot-icon { font-size: 28px !important; }
+      .tablet-side-panel .ability-text { font-size: 11px !important; }
+
+      .victory-panel { padding: 24px 36px !important; min-width: 260px !important; }
+      .victory-title { font-size: 20px !important; }
+      .victory-sub { font-size: 11px !important; margin-bottom: 16px !important; }
+      #victory-restart { padding: 10px 22px !important; font-size: 13px !important; }
+    }
   </style>
 </head>
 <body>
