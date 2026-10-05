@@ -1585,6 +1585,23 @@
       width: 60px;
       height: 60px;
     }
+	    /* Крупные кнопки бонусов локаций для мобильного режима.
+       Эти кнопки позиционируются через 3D-проекцию, поэтому их размер
+       задаётся в координатах виртуального body 1920×1080. На телефоне
+       body сжимается — увеличиваем исходный размер, чтобы на экране
+       кнопка стала ~40–44 физических пикселя. margin-left / margin-top
+       держат центрирование на координате. */
+    html.is-mobile .location-bonus-btn {
+      width: 110px;
+      height: 84px;
+      margin-left: -55px;
+      margin-top: -42px;
+      border-radius: 16px;
+    }
+    html.is-mobile .location-bonus-btn .lb-icon {
+      width: 78%;
+      height: 78%;
+    }
   </style>
 </head>
 <body>
