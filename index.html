@@ -46,12 +46,15 @@
 
         /* Портретная ориентация — показываем оверлей «поверни телефон».
        Поворот через CSS не работает: position:fixed-элементы игнорируют transform. */
-    #orientation-overlay {
+        #orientation-overlay {
       display: none;
       position: fixed;
       inset: 0;
+      width: 100vw;
+      height: 100vh;
       z-index: 1000000;
-      background: radial-gradient(circle at 50% 40%, #1a1a2e 0%, #000 80%);
+      background: #0a0a14;
+      background-image: radial-gradient(circle at 50% 40%, #1a1a2e 0%, #000 80%);
       align-items: center;
       justify-content: center;
       flex-direction: column;
@@ -82,7 +85,9 @@
       0%, 100% { transform: rotate(0deg); }
       50% { transform: rotate(-90deg); }
     }
-    @media (orientation: portrait) and (max-width: 900px) {
+    /* Портретное окно — показываем оверлей везде (и на ПК тоже).
+       На узком тач-экране это критично, на ПК — защита от вытянутого окна. */
+    @media (orientation: portrait) {
       #orientation-overlay { display: flex; }
     }
             canvas {
@@ -2534,16 +2539,18 @@
       camera.updateProjectionMatrix();
 
       // Оверлеи, которые должны покрывать физический экран.
-            ['orientation-overlay', 'discard-dim-overlay'].forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.style.left = (-offsetX / scale) + 'px';
-        el.style.top = (-offsetY / scale) + 'px';
-        el.style.right = 'auto';
-        el.style.bottom = 'auto';
-        el.style.width = (vw / scale) + 'px';
-        el.style.height = (vh / scale) + 'px';
-      });
+      // #orientation-overlay теперь управляется чистым CSS (inset: 0, 100vw/vh).
+      // Оставляем в JS только discard-dim-overlay, ему нужен точный размер
+      // в body-координатах, чтобы совпасть с игровым кадром.
+      const dimEl = document.getElementById('discard-dim-overlay');
+      if (dimEl) {
+        dimEl.style.left = (-offsetX / scale) + 'px';
+        dimEl.style.top = (-offsetY / scale) + 'px';
+        dimEl.style.right = 'auto';
+        dimEl.style.bottom = 'auto';
+        dimEl.style.width = (vw / scale) + 'px';
+        dimEl.style.height = (vh / scale) + 'px';
+      }
 
       // На мобилке прижимаем панели колод и карт к физическим
       // краям экрана — компенсируем боковые чёрные полосы.
@@ -8464,9 +8471,18 @@ window.addEventListener('resize', () => {
   updateDiscardPickButton();
 });
 
-if (screen.orientation && screen.orientation.addEventListener) {
-  screen.orientation.addEventListener('change', fitBodyToScreen);
-}
+    function refitAfterOrientation() {
+      // Пересчитываем несколько раз, потому что мобильные браузеры
+      // сообщают о повороте раньше, чем реально обновляют innerWidth/Height.
+      fitBodyToScreen();
+      setTimeout(fitBodyToScreen, 80);
+      setTimeout(fitBodyToScreen, 250);
+      setTimeout(fitBodyToScreen, 600);
+    }
+    if (screen.orientation && screen.orientation.addEventListener) {
+      screen.orientation.addEventListener('change', refitAfterOrientation);
+    }
+    window.addEventListener('orientationchange', refitAfterOrientation);
 
     // Пересчитываем layout несколько раз после загрузки.
     // На мобильных браузерах высота окна меняется, когда показывается /
