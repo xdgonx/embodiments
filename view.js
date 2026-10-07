@@ -4,14 +4,15 @@
 
 import * as THREE from 'three';
 import {
-  Game, BOARD, BOARD_WIDTH, BOARD_HEIGHT, IMG_W, IMG_H,
+  BOARD, BOARD_WIDTH, BOARD_HEIGHT,
   TOKEN_RADIUS, COIN_HEIGHT, CAPTAIN_TOKEN_RADIUS, CAPTAIN_TOKEN_HEIGHT,
   BASE_WHITE_ID, BASE_BLACK_ID, BLUE_CELLS,
   COLOR_RED, COLOR_YELLOW,
   LOCATION_BONUS_IDS, LOCATION_CELLS,
   CONDITIONAL,
-  PROFILES, getPoint, pxTo3D, getCaptainSlotPosition, getLocationForSide,
+  PROFILES, getPoint, pxTo3D, getCaptainSlotPosition,
   computePiecePositions,
+  EXPLORE_HIGHLIGHT_OFFSET,
 } from './game.js';
 
 const VIRTUAL_W = 1920;
@@ -531,6 +532,12 @@ export class View {
     this.fsRequested = false;
 
     this._pendingFinishEndTurn = false;
+
+    // ★ Защита от даблклика по кнопке «Подготовка к завершению хода»,
+    //   пока идёт последовательный возврат карт вскрытия (2 resolve'а
+    //   с задержкой 120 мс). Явно объявлен, чтобы не полагаться на
+    //   неявный undefined.
+    this._abortingReveal = false;
 
     // Слой для ghost-карт (анимации полёта карт между UI-элементами).
     this.flyLayer = document.getElementById('fly-cards-layer');
@@ -1263,11 +1270,14 @@ export class View {
     if (fromEl && fromEl.parentNode) fromEl.parentNode.removeChild(fromEl);
     this.revealCardElements = this.revealCardElements.filter(el => el !== fromEl);
 
-    // Панель со списком карт вскрытых — обновляем в конце, а не в начале.
-    // Если после этого хода ещё есть карты — перерисуем, если нет —
-    // панель скроется через revealFinished.
+    // ★ Обновляем только кнопочный список и переставляем оставшиеся
+    //   карты вскрытия. Слой `revealLayer` НЕ пересоздаём — иначе
+    //   оставшиеся карты визуально прыгнули бы на новые позиции.
     if (this.game.revealState.active) {
-      this._renderLocation2Panel();
+      this._renderLocation2ButtonsOnly();
+      if (this.revealCardElements.length > 0) {
+        this._positionRevealCards(side);
+      }
     }
 
     if (!fromRect || fromRect.width <= 0) return;
@@ -2492,6 +2502,20 @@ export class View {
     const side = game.revealState.side;
     this.ui.activePanel = { kind: 'loc2', side, locId: 2 };
 
+    this._renderLocation2ButtonsOnly();
+    this._renderRevealCards(side);
+    this._renderLocationBonusButtons();
+  }
+
+  // ★ Обновляет только кнопки «Вернуть»/«Сбросить» и заголовки панели
+  //   бонуса 2. НЕ трогает слой вскрытых карт (`revealLayer`) — это
+  //   позволяет вызывать его посреди анимации resolve, не пересоздавая
+  //   оставшиеся карты вскрытия (иначе они визуально прыгают на новые
+  //   позиции).
+  _renderLocation2ButtonsOnly() {
+    const game = this.game;
+    const side = game.revealState.side;
+
     this.refs.locationBonusPanel.classList.remove('hidden');
     this.refs.locationBonusPanel.classList.toggle('white-turn', side === 'white');
     this.refs.locationBonusPanel.classList.toggle('black-turn', side === 'black');
@@ -2544,9 +2568,6 @@ export class View {
       wrap.appendChild(btnD);
       list.appendChild(wrap);
     }
-
-    this._renderRevealCards(side);
-    this._renderLocationBonusButtons();
   }
 
   _renderRevealCards(side) {
@@ -3347,7 +3368,7 @@ export class View {
     if (mode === 'explore') {
       const enemyBaseId = piece.side === 'white' ? BASE_BLACK_ID : BASE_WHITE_ID;
       const cell = getPoint(enemyBaseId);
-      const off = piece.side === 'white' ? { x: -0.1, z: 0.08 } : { x: 0.1, z: 0.08 };
+      const off = EXPLORE_HIGHLIGHT_OFFSET[piece.side];
 
       this.exploreTargetsGroup.add(this._createStadiumHighlightAt(cell.x + off.x, cell.z + off.z, {
         width: 1.3, height: 3.4, y: 0.10,

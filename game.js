@@ -79,16 +79,16 @@ export const BOARD = RAW_POINTS.map(p => {
 export function getPoint(id) { return BOARD.find(p => p.id === id); }
 
 export const CAPTAIN_SLOT_POSITIONS = [
-  { value: 1, x: 160,  y: 225 }, { value: 2, x: 341,  y: 225 },
-  { value: 3, x: 522,  y: 225 }, { value: 4, x: 703,  y: 225 },
-  { value: 5, x: 884,  y: 225 }, { value: 6, x: 1065, y: 225 },
-  { value: 7, x: 1246, y: 225 }, { value: 8, x: 1427, y: 225 },
-  { value: 9, x: 1608, y: 225 },
-  { value: 10, x: 2292, y: 225 }, { value: 9, x: 2473, y: 225 },
-  { value: 8, x: 2654, y: 225 }, { value: 7, x: 2835, y: 225 },
-  { value: 6, x: 3016, y: 225 }, { value: 5, x: 3197, y: 225 },
-  { value: 4, x: 3378, y: 225 }, { value: 3, x: 3559, y: 225 },
-  { value: 2, x: 3740, y: 225 }, { value: 1, x: 3921, y: 225 },
+  { x: 160,  y: 225 }, { x: 341,  y: 225 },
+  { x: 522,  y: 225 }, { x: 703,  y: 225 },
+  { x: 884,  y: 225 }, { x: 1065, y: 225 },
+  { x: 1246, y: 225 }, { x: 1427, y: 225 },
+  { x: 1608, y: 225 },
+  { x: 2292, y: 225 }, { x: 2473, y: 225 },
+  { x: 2654, y: 225 }, { x: 2835, y: 225 },
+  { x: 3016, y: 225 }, { x: 3197, y: 225 },
+  { x: 3378, y: 225 }, { x: 3559, y: 225 },
+  { x: 3740, y: 225 }, { x: 3921, y: 225 },
 ];
 export function getCaptainSlotPosition(side, mightValue) {
   const v = Math.max(1, mightValue | 0);
@@ -656,16 +656,6 @@ export class Game {
     const enemySide = side === 'white' ? 'black' : 'white';
     events.push({ kind: 'exploreResolved', pieceId: piece.id, enemySide, orbsToEnemy: 3 });
     return { ok: true };
-  }
-
-  markPieceAtBase(pieceId, baseId) {
-    const piece = this.getPiece(pieceId);
-    if (!piece) return { ok: false, events: [] };
-    piece.cellId = baseId;
-    piece.hp = piece.maxHp;
-    const events = [];
-    this._checkVictory(events);
-    return { ok: true, events, state: this.getState() };
   }
 
   _playMirror(side, card, piece, targetPieceId, events) {
