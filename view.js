@@ -23,6 +23,7 @@ document.documentElement.classList.toggle('is-touch', IS_TOUCH);
 document.documentElement.classList.toggle('is-mobile', IS_MOBILE);
 
 const MOBILE_BONUS_Y_OFFSET = 10;
+const MOBILE_MIRROR_Y_LIFT = 10;
 const LOCATION_BONUS_POSITIONS = {
   white: { 1:{x:400,y:1220}, 2:{x:1150,y:1220}, 4:{x:2630,y:1220}, 5:{x:3380,y:1220} },
   black: { 1:{x:3680,y:1220}, 2:{x:2930,y:1220}, 4:{x:1450,y:1220}, 5:{x:700,y:1220} },
@@ -3119,7 +3120,8 @@ export class View {
 
     r.mirrorAction.classList.add('visible');
     r.mirrorAction.style.left = (rect.left + rect.width / 2) + 'px';
-    r.mirrorAction.style.top = (rect.bottom + 8) + 'px';
+    const mirrorY = rect.bottom + 8 - (IS_MOBILE ? MOBILE_MIRROR_Y_LIFT : 0);
+    r.mirrorAction.style.top = mirrorY + 'px';
   }
 
   _hideActionPanel() {
