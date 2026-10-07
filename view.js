@@ -806,8 +806,6 @@ export class View {
     this.mouse = new THREE.Vector2();
     this.spinningHighlights = [];
 
-    this._fitBody();
-
     const refit = () => {
       this._fitBody();
       setTimeout(() => this._fitBody(), 80);
@@ -815,11 +813,26 @@ export class View {
       setTimeout(() => this._fitBody(), 600);
     };
 
+    // Начальная подгонка — multi-shot: браузер может отдать корректные
+    // размеры не сразу (особенно на iOS при загрузке в ландшафте).
+    refit();
+
     window.addEventListener('resize', refit);
     if (screen.orientation && screen.orientation.addEventListener) {
       screen.orientation.addEventListener('change', refit);
     }
     window.addEventListener('orientationchange', refit);
+
+    // visualViewport — самый надёжный источник размеров на мобильных.
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', refit);
+      window.visualViewport.addEventListener('scroll', refit);
+    }
+
+    // Страховка: ещё раз после полной загрузки страницы и после pageshow
+    // (iOS Safari иногда уточняет размеры только к этому моменту).
+    window.addEventListener('load', refit);
+    window.addEventListener('pageshow', refit);
 
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(() => this._fitBody());
@@ -830,8 +843,15 @@ export class View {
   }
 
   _fitBody() {
-    const vw = window.innerWidth;
-    const vh = document.documentElement.clientHeight || window.innerHeight;
+    // На мобильных визуальный вьюпорт надёжнее innerWidth/innerHeight:
+    // последние могут быть «промежуточными» сразу после загрузки в
+    // необычной ориентации или при показе/скрытии адресной строки.
+    // visualViewport.width/height всегда отражают видимую область.
+    const vv = window.visualViewport;
+    const vw = (vv && vv.width)  || window.innerWidth;
+    const vh = (vv && vv.height)
+             || document.documentElement.clientHeight
+             || window.innerHeight;
     const scale = Math.min(vw / VIRTUAL_W, vh / VIRTUAL_H);
     const ox = (vw - VIRTUAL_W * scale) / 2;
     const oy = (vh - VIRTUAL_H * scale) / 2;
