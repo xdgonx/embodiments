@@ -771,7 +771,9 @@ export class View {
     this.renderer.domElement.style.position = 'absolute';
     this.renderer.domElement.style.top = '0';
     this.renderer.domElement.style.left = '0';
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
+    const dpr = window.devicePixelRatio || 1;
+    const capped = IS_TOUCH ? Math.min(dpr, 1.5) : Math.min(dpr, 3);
+    this.renderer.setPixelRatio(capped);
     this.renderer.setSize(VIRTUAL_W, VIRTUAL_H);
     this.renderer.shadowMap.enabled = true;
     document.body.appendChild(this.renderer.domElement);
@@ -914,7 +916,9 @@ export class View {
     canvas.style.top = (-oy / scale) + 'px';
     canvas.style.width = (vw / scale) + 'px';
     canvas.style.height = (vh / scale) + 'px';
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
+    const dpr = window.devicePixelRatio || 1;
+    const capped = IS_TOUCH ? Math.min(dpr, 1.5) : Math.min(dpr, 3);
+    this.renderer.setPixelRatio(capped);
     this.renderer.setSize(vw, vh, false);
     const ASPECT = VIRTUAL_W / VIRTUAL_H;
     const vA = vw / vh;
