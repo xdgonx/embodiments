@@ -985,10 +985,9 @@ export class View {
   }
 
   // Универсальный ghost: летит из fromRect в toRect, затухает/масштабируется.
-   // Универсальный ghost: летит из fromRect в toRect, затухает/масштабируется.
   // opts.onDone — вызовется после завершения анимации (даже если она
   // не запустилась из-за нулевых размеров, чтобы вызвать колбэк).
-    _flyCard(fromRect, toRect, card, opts = {}) {
+  _flyCard(fromRect, toRect, card, opts = {}) {
     const done = () => { if (typeof opts.onDone === 'function') opts.onDone(); };
     if (!fromRect || !toRect || !this.flyLayer) { done(); return; }
 
@@ -1085,7 +1084,6 @@ export class View {
     return { side, uid, card, fromRect };
   }
 
-  // Запуск полёта ПОСЛЕ того, как state и DOM уже обновились.
   // Запуск полёта ПОСЛЕ того, как state и DOM уже обновились.
   _launchFlyForAction(ctx, action) {
     let targetRect = null;
@@ -1904,9 +1902,7 @@ export class View {
         el.appendChild(img);
         this._attachHoverToElement(el, card);
 
-        // ★ Новая карта невидима, пока до неё не долетит ghost из колоды.
-        //   Иначе она «появляется» мгновенно, а анимация летит поверх неё.
-        // ★ Новая карта невидима, пока до неё не долетит ghost из колоды.
+		// ★ Новая карта невидима, пока до неё не долетит ghost из колоды.
         //   Иначе она «появляется» мгновенно, а анимация летит поверх неё.
         el.style.opacity = '0';
         el.style.transition = 'opacity 120ms ease-out';
@@ -1951,7 +1947,6 @@ export class View {
         container.insertBefore(el, currentAtIndex || null);
       }
 
-      // ★ Новая карта — планируем анимацию «из колоды в руку» после rAF.
       // ★ Новая карта — планируем анимацию «из колоды в руку» после rAF.
       if (isNewCard) {
         const deckEl = side === 'white'
@@ -4566,7 +4561,11 @@ export class View {
 
     r.locationBonusIcon.onclick = (e) => {
       e.stopPropagation();
-      if (this.game.revealState && this.game.revealState.active) {
+      // ★ В сетевом режиме локальный abortReveal не вызываем:
+      //   отмену вскрытия должен решать сервер, клиент только
+      //   отправляет action'ы через dispatch. Здесь лишь закрываем
+      //   UI-панель.
+      if (!this.net && this.game.revealState && this.game.revealState.active) {
         const res = this.game.abortReveal();
         if (res.ok) this.playEvents(res.events);
       }
@@ -5315,6 +5314,15 @@ export class View {
         if (o.sprite.material.map) o.sprite.material.map.dispose();
         o.sprite.material.dispose();
         this.powerOrbs.splice(i, 1);
+
+        // ★ В сетевом режиме view не мутирует game: сервер сам
+        //   применит уменьшение могущества и завершение хода, а
+        //   клиент получит новый state через net.onState. Локально
+        //   только удаляем спрайт и ждём синхронизацию — её
+        //   выполнит `_pendingStateSync` в основном цикле.
+        //   Иначе получим двойное применение (и локально, и на
+        //   сервере) и рассинхрон.
+        if (this.net) continue;
 
         const res = this.game.applyMightChange(o.affectedSide, -1);
         if (res && res.events) {
