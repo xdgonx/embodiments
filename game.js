@@ -206,8 +206,9 @@ export class Game {
 
     this._initPieces();
     this._initDecks();
+    // Белые начинают с полной рукой, чёрные добирают свои 5 карт
+    // в момент, когда к ним переходит ход (см. _doFinishEndTurn).
     this._refillHand('white');
-    this._refillHand('black');
     this._takeBonusSnapshot('white');
     this._takeTurnSnapshot();
   }
@@ -287,13 +288,14 @@ export class Game {
     return a;
   }
 
-  _refillHand(side) {
+  _refillHand(side, events) {
     const st = this.cardState[side];
     while (st.hand.length < 5) {
       if (st.deck.length === 0) {
         if (st.discard.length === 0) break;
         st.deck = this._shuffle(st.discard);
         st.discard = [];
+        if (events) events.push({ kind: 'deckReshuffled', side });
       }
       const c = st.deck.pop();
       c.faceUp = false;
@@ -673,7 +675,14 @@ export class Game {
     if (!allowed.includes(target)) return { ok: false, error: 'Нельзя передать зерцало этой цели' };
     if (target.mirror) return { ok: false, error: 'У цели уже есть зерцало' };
 
-    this._consumeCard(side, card, events);
+    // ★ Карта снимается с руки, но НЕ идёт в сброс — она отправляется
+    //   сразу в зерцало. Иначе одна и та же ссылка оказывается и в
+    //   discard, и в target.mirror, и при перемешивании сброса в колоду
+    //   карта из зерцала «утекает» в колоду.
+    //   В сброс она попадёт позже: при использовании зерцала, смерти
+    //   или исследовании владельца.
+    this._consumeCard(side, card, events, { toDiscard: false });
+
     target.mirror = card;
     target.mirrorSide = side;
     events.push({ kind: 'mirrorAttached', ownerId: target.id, card });
@@ -741,7 +750,7 @@ export class Game {
     this.hasDiscardedThisTurn[from] = false;
     this.locationBonusUsed[from] = this._emptyBonusMap();
 
-    this._refillHand(this.currentTurn);
+    this._refillHand(this.currentTurn, events);
     this.cardState[this.currentTurn].playedThisTurn = 0;
     this._takeBonusSnapshot(this.currentTurn);
 
@@ -781,7 +790,10 @@ export class Game {
     if (st.deck.length > 0) {
       drawn = st.deck.pop();
       drawn.faceUp = false;
-      st.hand.push(drawn);
+      // ★ Новая карта встаёт на место сброшенной, а не в конец руки.
+      //   Так «первая у колоды» остаётся первой у колоды, и вся рука
+      //   не сдвигается на одну позицию в сторону.
+      st.hand.splice(idx, 0, drawn);
     }
     this.locationBonusUsed[side][1] = true;
     events.push({ kind: 'locationBonus1Applied', side, discarded: card, drawn });
@@ -840,9 +852,12 @@ export class Game {
     const discardCard = st.discard.find(c => c.uid === discardCardUid);
     if (!discardCard) return { ok: false, error: 'Карты нет в сбросе' };
 
-    st.hand.splice(st.hand.indexOf(handCard), 1);
+    const handIdx = st.hand.indexOf(handCard);
+    st.hand.splice(handIdx, 1);
     st.discard.splice(st.discard.indexOf(discardCard), 1);
-    st.hand.push(discardCard);
+    // ★ Карта из сброса встаёт в руку на то же место, откуда ушла
+    //   сброшенная — симметрично тому, как это работает в бонусе 1.
+    st.hand.splice(handIdx, 0, discardCard);
     st.discard.push(handCard);
     this.highlightUid[side] = handCard.uid;                   // ★
 
@@ -895,14 +910,20 @@ export class Game {
     return { ok: true };
   }
 
-  _consumeCard(side, card, events) {
+  // Снимает карту с руки и (по умолчанию) кладёт в сброс.
+  // opts.toDiscard === false — карта уходит НЕ в сброс, а сразу
+  // в другое место (например, в зерцало). Сброс в этом случае
+  // произойдёт позже: когда карту сыграют из зерцала, либо когда
+  // персонаж с зерцалом погибнет/исследует.
+  _consumeCard(side, card, events, opts = {}) {
+    const toDiscard = opts.toDiscard !== false;
     const st = this.cardState[side];
     const idx = st.hand.indexOf(card);
     if (idx < 0) throw new Error('Карты нет в руке');
     st.hand.splice(idx, 1);
-    st.discard.push(card);
+    if (toDiscard) st.discard.push(card);
     st.playedThisTurn++;
-    this.highlightUid[side] = card.uid;                       // ★
+    this.highlightUid[side] = card.uid;
     this.actionTakenThisTurn[side] = true;
     events.push({ kind: 'cardPlayed', side, card });
   }
@@ -967,7 +988,26 @@ export class Game {
       rngState: this.rngState,
       uidCounter: this.uidCounter,
       teamConfig: this.teamConfig,
-      pieces: this.pieces,
+      // ★ Каждый piece разворачиваем в «плоский» объект без вложенного
+      //   profile — на клиенте profile восстанавливается из PROFILES
+      //   по profileKey. Это ~30% размера снапшота и убирает дублирование
+      //   одного и того же объекта PROFILES[key] в каждом piece.
+      pieces: this.pieces.map(p => ({
+        id: p.id,
+        profileKey: p.profileKey,
+        side: p.side,
+        role: p.role,
+        speed: p.speed,
+        strength: p.strength,
+        hp: p.hp,
+        maxHp: p.maxHp,
+        influence: p.influence,
+        name: p.name,
+        cellId: p.cellId,
+        mirror: p.mirror,
+        mirrorSide: p.mirrorSide,
+        captainBuffApplied: p.captainBuffApplied,
+      })),
       might: this.might,
       cardState: this.cardState,
       currentTurn: this.currentTurn,
@@ -980,7 +1020,7 @@ export class Game {
       winner: this.winner,
       bonusAvailabilitySnapshot: this.bonusAvailabilitySnapshot,
       pendingEndTurnAfterOrbs: this.pendingEndTurnAfterOrbs,
-      highlightUid: this.highlightUid,                         // ★
+      highlightUid: this.highlightUid,
     }));
   }
 
@@ -989,7 +1029,13 @@ export class Game {
     this.rngState = s.rngState;
     this.uidCounter = s.uidCounter;
     this.teamConfig = s.teamConfig;
-    this.pieces = s.pieces;
+    // ★ Восстанавливаем profile из PROFILES по profileKey. Снапшот
+    //   хранит только profileKey (см. _snapshot), сам объект профиля
+    //   один и тот же — незачем гонять его по сети.
+    this.pieces = (s.pieces || []).map(p => ({
+      ...p,
+      profile: PROFILES[p.profileKey],
+    }));
     this.might = s.might;
     this.cardState = s.cardState;
     this.currentTurn = s.currentTurn;
@@ -1002,7 +1048,7 @@ export class Game {
     this.winner = s.winner;
     this.bonusAvailabilitySnapshot = s.bonusAvailabilitySnapshot;
     this.pendingEndTurnAfterOrbs = s.pendingEndTurnAfterOrbs;
-    this.highlightUid = s.highlightUid || { white: null, black: null };  // ★
+    this.highlightUid = s.highlightUid || { white: null, black: null };
   }
 
   getState() { return this._snapshot(); }

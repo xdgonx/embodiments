@@ -474,7 +474,14 @@ export class View {
     this.attackOverrides = new Map();
     this.queuedRevives = [];
     this.revivingIds = new Set();
-	this._eventQueue = [];
+    this._eventQueue = [];
+    this._pendingStateSync = false;
+
+    // ★ Сколько карт прямо сейчас «в полёте» к колоде. Пока > 0,
+    //   _renderDeckVisuals показывает прежний размер и прежний топ;
+    //   каждое прилётие ghost'а уменьшает счётчик на 1 и «раскрывает»
+    //   следующую карту наверху.
+    this._pendingDeckReturns = { white: 0, black: 0 };
 
     this._pendingDeathAfterAttack = null;
     this._pendingDeathOrbFromAttack = null;
@@ -525,6 +532,22 @@ export class View {
 
     this._pendingFinishEndTurn = false;
 
+    // Слой для ghost-карт (анимации полёта карт между UI-элементами).
+    this.flyLayer = document.getElementById('fly-cards-layer');
+    if (!this.flyLayer) {
+      this.flyLayer = document.createElement('div');
+      this.flyLayer.id = 'fly-cards-layer';
+      document.body.appendChild(this.flyLayer);
+    }
+
+    // Очередь карт, которые надо анимировать «из колоды в руку»
+    // после ближайшего rAF (тогда DOM уже актуален).
+    this._pendingHandAnims = [];
+
+    // ★ uid-ы карт, для которых стандартную анимацию «из колоды в руку»
+    //   запускать не нужно — они приедут из сброса (бонус 4).
+    this._suppressHandAnimUids = new Set();
+
     this._buildScene();
     this._buildDomRefs();
     this._wireInput();
@@ -552,18 +575,39 @@ export class View {
       net.onAction = (result) => {
         if (result.ok) this.playEvents(result.events || []);
       };
-      net.onState = () => this.syncFromGame();
+      net.onState = () => {
+        // ★ Если играет анимация или ждут события — не сношаем сцену.
+        //   Сначала домотаем локальную очередь, потом догоним state.
+        //   Иначе жетоны в анимации дёрнутся, HP-спрайты моргнут, а
+        //   trail от ghost'а останется висеть в воздухе.
+        if (this.animating || this._eventQueue.length > 0) {
+          this._pendingStateSync = true;
+          return;
+        }
+        this.syncFromGame();
+      };
     }
   }
 
   dispatch(action) {
-    if (this.animating) return;
+    // В сетевом режиме всегда отправляем на сервер — очередью анимаций
+    // и валидностью действия занимается сервер, а не view. Локальный
+    // guard `if (this.animating)` нужен только для сингла, чтобы
+    // спам-клики не мутировали состояние посреди анимации.
     if (this.net) { this.net.send(action); return; }
+    if (this.animating) return;
     if (!this.game) return;
+
+    // ★ Захватываем позицию карты в руке ДО того, как логика её уберёт.
+    const flyCtx = this._captureFlyForAction(action);
+
     const result = this.game.applyAction(action);
     if (!result.ok) { console.warn('Action rejected:', result.error, action); return; }
     this.playEvents(result.events || []);
     this.syncFromGame();
+
+    // ★ Запускаем полёт из старой позиции в новую.
+    if (flyCtx) this._launchFlyForAction(flyCtx, action);
   }
 
   // События, которые стартуют анимацию. Если такое приходит, пока
@@ -597,10 +641,19 @@ export class View {
       }
     }
     this.syncFromGame();
+    // ★ Если за время обработки сервер прислал state — сбрасываем флаг.
+    this._pendingStateSync = false;
   }
 
   syncFromGame() {
-    if (!this.game || !this.preloaded) return;
+    if (!this.game) return;
+    // Если прелоад не закончился — ставим флаг, `init()` перерисует
+    // после завершения (см. `setGame`). Иначе при загрузке страницы
+    // state может прийти раньше, чем текстуры готовы.
+    if (!this.preloaded) {
+      this._pendingStateSync = true;
+      return;
+    }
     this.renderAll();
   }
 
@@ -896,14 +949,394 @@ export class View {
 
   _bodyRectOf(el) {
     const r = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = document.documentElement.clientHeight || window.innerHeight;
+    const vv = window.visualViewport;
+    const vw = (vv && vv.width) || window.innerWidth;
+    const vh = (vv && vv.height) || document.documentElement.clientHeight || window.innerHeight;
     const scale = Math.min(vw / VIRTUAL_W, vh / VIRTUAL_H);
     const ox = (vw - VIRTUAL_W * scale) / 2;
     const oy = (vh - VIRTUAL_H * scale) / 2;
     const toB = (x, y) => ({ x: (x - ox) / scale, y: (y - oy) / scale });
     const tl = toB(r.left, r.top), br = toB(r.right, r.bottom);
     return { left: tl.x, top: tl.y, right: br.x, bottom: br.y, width: br.x - tl.x, height: br.y - tl.y };
+  }
+
+  // ============================================================
+  // Анимации полёта карт (ghost)
+  // ============================================================
+
+  // Пробивает точку в 3D-объекте на экран в body-координаты.
+  _threeToBodyCenter(obj3d) {
+    if (!obj3d || !this.camera || !this.renderer) return null;
+    const pos = new THREE.Vector3();
+    obj3d.getWorldPosition(pos);
+    const v = pos.clone().project(this.camera);
+    const canvas = this.renderer.domElement;
+    const r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    const xVP = (v.x * 0.5 + 0.5) * r.width + r.left;
+    const yVP = (-v.y * 0.5 + 0.5) * r.height + r.top;
+    const bodyRect = this._bodyRectOf(canvas);
+    if (!bodyRect.width) return null;
+    const scale = bodyRect.width / r.width;
+    return {
+      x: bodyRect.left + (xVP - r.left) * scale,
+      y: bodyRect.top  + (yVP - r.top)  * scale,
+    };
+  }
+
+  // Универсальный ghost: летит из fromRect в toRect, затухает/масштабируется.
+   // Универсальный ghost: летит из fromRect в toRect, затухает/масштабируется.
+  // opts.onDone — вызовется после завершения анимации (даже если она
+  // не запустилась из-за нулевых размеров, чтобы вызвать колбэк).
+    _flyCard(fromRect, toRect, card, opts = {}) {
+    const done = () => { if (typeof opts.onDone === 'function') opts.onDone(); };
+    if (!fromRect || !toRect || !this.flyLayer) { done(); return; }
+
+    const side = opts.side === 'black' ? 'black' : 'white';
+    const duration = opts.duration ?? 380;
+    const delay = opts.delay ?? 0;
+    const startScale = opts.startScale ?? 1.05;
+    // По умолчанию — растягиваем ghost до размера цели. Для случаев
+    // «карта уходит в сброс/зерцало» endScale задаётся явно (0.55–0.7).
+    const endScale = (opts.endScale != null)
+      ? opts.endScale
+      : (toRect.width > 0 ? toRect.width / fromRect.width : 1);
+    const endOpacity = opts.endOpacity ?? 0.0;
+
+    const w = fromRect.width, h = fromRect.height;
+    if (w <= 0 || h <= 0) { done(); return; }
+
+    const el = document.createElement('div');
+    el.className = 'fly-card ' + side + '-card';
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+
+    const img = document.createElement('img');
+    img.src = (card && card.imgPath) ? card.imgPath : 'cards/back.png';
+    el.appendChild(img);
+    this.flyLayer.appendChild(el);
+
+    const startCX = fromRect.left + w / 2;
+    const startCY = fromRect.top + h / 2;
+    const endCX = toRect.left + toRect.width / 2;
+    const endCY = toRect.top + toRect.height / 2;
+
+    const startTX = startCX - w / 2;
+    const startTY = startCY - h / 2;
+    const endTX = endCX - w / 2;
+    const endTY = endCY - h / 2;
+
+    el.style.transform = `translate(${startTX}px, ${startTY}px) scale(${startScale})`;
+    el.style.opacity = '1';
+
+    void el.offsetWidth;
+
+    el.style.transition =
+      `transform ${duration}ms cubic-bezier(.25,.6,.35,1) ${delay}ms, ` +
+      `opacity ${duration}ms ease-out ${delay}ms`;
+
+    el.style.transform = `translate(${endTX}px, ${endTY}px) scale(${endScale})`;
+    el.style.opacity = String(endOpacity);
+
+
+    const totalMs = duration + delay;
+    const t0 = performance.now();
+    let fired = false;
+
+    const tick = () => {
+      const elapsed = performance.now() - t0;
+      if (!fired && elapsed >= totalMs) {
+        fired = true;
+        done();
+        setTimeout(() => {
+          if (el.parentNode) el.parentNode.removeChild(el);
+        }, 40);
+        return;
+      }
+      if (!fired) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  // Захват позиции карты в руке ДО того, как логика её уберёт.
+  _captureFlyForAction(action) {
+    if (!action || !this.game) return null;
+    const kind = action.kind;
+    if (kind !== 'playCard' && kind !== 'discard'
+        && kind !== 'locationBonus1' && kind !== 'locationBonus4') return null;
+    const side = action.side;
+    if (!side) return null;
+    const uid = action.cardUid || action.handCardUid;
+    if (!uid) return null;
+
+    const container = side === 'white' ? this.refs.whiteHandSlots : this.refs.blackHandSlots;
+    if (!container) return null;
+    let el = null;
+    Array.from(container.children).forEach(c => {
+      if (c.dataset && c.dataset.uid === uid) el = c;
+    });
+    if (!el) return null;
+
+    const st = this.game.cardState[side];
+    const card = st.hand.find(c => c.uid === uid);
+    if (!card) return null;
+
+    const fromRect = this._bodyRectOf(el);
+    return { side, uid, card, fromRect };
+  }
+
+  // Запуск полёта ПОСЛЕ того, как state и DOM уже обновились.
+  // Запуск полёта ПОСЛЕ того, как state и DOM уже обновились.
+  _launchFlyForAction(ctx, action) {
+    let targetRect = null;
+    let endOpacity = 0.15;
+    let endScale = 0.7;
+    let duration = 380;
+
+    if (action.kind === 'playCard' && action.mode === 'mirror') {
+      // Карта летит не в сброс, а к бейджу зерцала на жетоне-цели.
+      // В момент запуска меша-бейджа ещё может не быть — _refreshMirrorBadge
+      // грузит текстуру асинхронно. Поэтому целимся в точку, где бейдж
+      // появится: позиция жетона + оффсеты MIRROR_BADGE_HEIGHT / _OFFSET_Z.
+      const targetPieceId = action.targetPieceId;
+      const targetEntry = this.pieceMeshes.get(targetPieceId);
+      if (targetEntry && targetEntry.mesh) {
+        const pos = targetEntry.mesh.position.clone();
+        pos.y += MIRROR_BADGE_HEIGHT;
+        pos.z += MIRROR_BADGE_OFFSET_Z;
+        const center = this._threeToBodyCenter({ getWorldPosition: (v) => v.copy(pos) });
+        if (center) {
+          const size = 44;
+          targetRect = {
+            left: center.x - size / 2,
+            top:  center.y - size / 2,
+            width: size, height: size,
+          };
+          // ★ endOpacity = 0: ghost должен полностью раствориться до
+          //   удаления из DOM. С 0.55 он оставался бы видимым поверх
+          //   бейджа и его удаление выглядело бы как вспышка яркости.
+          endOpacity = 0;
+          endScale = 0.55;
+          duration = 520;
+        }
+      }
+    }
+
+    if (!targetRect) {
+      const panelId = ctx.side === 'white' ? 'discard-left' : 'discard-right';
+      const panel = document.getElementById(panelId);
+      if (!panel) return;
+      targetRect = this._bodyRectOf(panel);
+    }
+
+    this._flyCard(ctx.fromRect, targetRect, ctx.card, {
+      side: ctx.side,
+      duration,
+      startScale: 1.05,
+      endScale,
+      endOpacity,
+    });
+  }
+
+  // Решаффл: несколько карт-рубашек летят из сброса в колоду.
+  // Бонус 2: карты вскрываются из колоды и разлетаются по своим местам.
+  // Бонус 4: карта возвращается из сброса в руку.
+  _animateBonus4(ev) {
+    const side = ev.side;
+    const newHandCard = ev.discardCard;   // карта, которая переезжает в руку
+    if (!newHandCard) { this._hideLocationPanel(); return; }
+
+    const panelId = side === 'white' ? 'discard-left' : 'discard-right';
+    const panel = document.getElementById(panelId);
+    // Ищем конкретную mini-карту в сбросе по uid — иначе ghost создастся
+    // размером со всю панель сброса и вырастет до её габаритов.
+    let fromRect = null;
+    if (panel) {
+      let srcEl = null;
+      panel.querySelectorAll('.discard-mini').forEach(c => {
+        if (c.dataset && c.dataset.uid === newHandCard.uid) srcEl = c;
+      });
+      fromRect = this._bodyRectOf(srcEl || panel);
+    }
+
+    // Помечаем uid — стандартная анимация из колоды не запустится.
+    this._suppressHandAnimUids.add(newHandCard.uid);
+
+    // Скрываем панель — renderHands создаст новую карту с opacity: 0.
+    this._hideLocationPanel();
+
+    if (!fromRect || fromRect.width <= 0) {
+      // Не смогли измерить сброс — просто раскрываем карту.
+      this._suppressHandAnimUids.delete(newHandCard.uid);
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      const container = side === 'white' ? this.refs.whiteHandSlots : this.refs.blackHandSlots;
+      let el = null;
+      Array.from(container.children).forEach(c => {
+        if (c.dataset && c.dataset.uid === newHandCard.uid) el = c;
+      });
+      if (!el) { this._suppressHandAnimUids.delete(newHandCard.uid); return; }
+
+      const toRect = this._bodyRectOf(el);
+      if (!toRect || toRect.width <= 0) { el.style.opacity = '1'; return; }
+
+      this._flyCard(fromRect, toRect, newHandCard, {
+        side,
+        duration: 400,
+        startScale: 0.75,
+        // endScale не задаём — _flyCard подгонит ghost под размер
+        // карты в руке (toRect.width / fromRect.width).
+        endOpacity: 1,
+        onDone: () => {
+          if (!el.isConnected) return;
+          el.style.transition = 'none';
+          el.style.opacity = '1';
+          requestAnimationFrame(() => { el.style.transition = ''; });
+        },
+      });
+    });
+  }
+
+  // Бонус 2: карты вскрываются из колоды и разлетаются по своим местам.
+  _animateBonus2Reveal(side, cards) {
+    if (!this.revealCardElements.length) return;
+    const deckEl = side === 'white' ? this.refs.whiteDeckVisual : this.refs.blackDeckVisual;
+    if (!deckEl) return;
+    const deckRect = this._bodyRectOf(deckEl);
+    if (!deckRect || deckRect.width <= 0) return;
+
+    // Прячем карты до прилёта ghost'ов.
+    this.revealCardElements.forEach(el => { el.style.opacity = '0'; });
+
+    const elements = this.revealCardElements.slice();
+    const cardsArr = (cards || []).slice();
+
+    requestAnimationFrame(() => {
+      elements.forEach((el, i) => {
+        if (!el.isConnected) return;
+        const toRect = this._bodyRectOf(el);
+        const card = cardsArr[i];
+        if (!toRect || toRect.width <= 0 || !card) {
+          el.style.opacity = '1';
+          return;
+        }
+        this._flyCard(deckRect, toRect, card, {
+          side,
+          duration: 420,
+          delay: i * 120,
+          startScale: 0.5,
+          endScale: 1,
+          endOpacity: 1,
+          onDone: () => {
+            if (!el.isConnected) return;
+            el.style.transition = 'none';
+            el.style.opacity = '1';
+            requestAnimationFrame(() => { el.style.transition = ''; });
+          },
+        });
+      });
+    });
+  }
+
+  // Бонус 2: карта разрешается — либо на верх колоды, либо в сброс.
+  _animateBonus2Resolve(ev) {
+    const { side, card, action } = ev;
+    if (!card) { this._renderLocation2Panel(); return; }
+
+    // Найти DOM-элемент до того, как панель перерисуется.
+    let fromEl = null;
+    for (const el of this.revealCardElements) {
+      if (el.dataset && el.dataset.cardUid === card.uid) { fromEl = el; break; }
+    }
+    const fromRect = fromEl ? this._bodyRectOf(fromEl) : null;
+
+    // ★ Точечно убираем этот эл. из слоя вскрытых и из массива.
+    //   Никакого _renderLocation2Panel с полной перерисовкой панели —
+    //   именно она тормозила основной поток настолько, что первый
+    //   ghost успевал «дождаться» второго. В обычном одиночном
+    //   возврате разница незаметна, а в end-turn с двумя картами
+    //   подряд — критична.
+    if (fromEl && fromEl.parentNode) fromEl.parentNode.removeChild(fromEl);
+    this.revealCardElements = this.revealCardElements.filter(el => el !== fromEl);
+
+    // Панель со списком карт вскрытых — обновляем в конце, а не в начале.
+    // Если после этого хода ещё есть карты — перерисуем, если нет —
+    // панель скроется через revealFinished.
+    if (this.game.revealState.active) {
+      this._renderLocation2Panel();
+    }
+
+    if (!fromRect || fromRect.width <= 0) return;
+
+    let toRect = null;
+    if (action === 'return') {
+      const deckEl = side === 'white' ? this.refs.whiteDeckVisual : this.refs.blackDeckVisual;
+      toRect = deckEl ? this._bodyRectOf(deckEl) : null;
+    } else {
+      const panelId = side === 'white' ? 'discard-left' : 'discard-right';
+      const panel = document.getElementById(panelId);
+      toRect = panel ? this._bodyRectOf(panel) : null;
+    }
+    if (!toRect) return;
+
+    if (action === 'return') {
+      this._pendingDeckReturns[side] += 1;
+      this._renderDeckVisuals();
+    }
+
+    this._flyCard(fromRect, toRect, card, {
+      side,
+      duration: 420,
+      startScale: 1,
+      endScale: 0.6,
+      endOpacity: 0,
+      onDone: () => {
+        if (action !== 'return') return;
+        this._pendingDeckReturns[side] = Math.max(0, this._pendingDeckReturns[side] - 1);
+        this._renderDeckVisuals();
+      },
+    });
+  }
+  
+  // Решаффл: несколько карт-рубашек летят из сброса в колоду.
+  _animateDeckReshuffle(side) {
+    const discardEl = side === 'white'
+      ? this.refs.whiteDiscardSlots
+      : this.refs.blackDiscardSlots;
+    const deckEl = side === 'white'
+      ? this.refs.whiteDeckVisual
+      : this.refs.blackDeckVisual;
+    if (!discardEl || !deckEl) return;
+
+    const deckRect = this._bodyRectOf(deckEl);
+    if (!deckRect) return;
+
+    const fromCards = Array.from(discardEl.querySelectorAll('.discard-mini'));
+    const sources = fromCards.slice(0, 6);
+
+    if (sources.length === 0) {
+      const panel = document.getElementById(side === 'white' ? 'discard-left' : 'discard-right');
+      if (!panel) return;
+      const fromRect = this._bodyRectOf(panel);
+      this._flyCard(fromRect, deckRect, null, {
+        side, duration: 460, startScale: 1, endScale: 0.55, endOpacity: 0.15,
+      });
+      return;
+    }
+
+    sources.forEach((srcEl, i) => {
+      const fromRect = this._bodyRectOf(srcEl);
+      this._flyCard(fromRect, deckRect, null, {
+        side,
+        duration: 420,
+        delay: i * 40,
+        startScale: 1,
+        endScale: 0.6,
+        endOpacity: 0.15,
+      });
+    });
   }
 
   // ----------------------------------------------------------
@@ -1130,11 +1563,31 @@ export class View {
       else hpToDraw = this.hpBlink.phase === 1 ? this.hpBlink.predictedHp : this.hpBlink.realHp;
     }
 
-    const canvas = entry.hpSprite.material.map.image;
-    drawHpBar(canvas, hpToDraw, maxHpToDraw);
-    entry.hpSprite.userData.maxHp = maxHpToDraw;
-    entry.hpSprite.material.map.needsUpdate = true;
+    // ★ Перерисовываем canvas ТОЛЬКО если реально изменились hp/maxHp.
+    //   Раньше это делалось на каждом кадре движения/атаки, потому что
+    //   _updateHpDisplay вызывался из tick() — а canvas 1500×180 +
+    //   needsUpdate = перезалив текстуры в GPU каждый кадр. Это и давало
+    //   микро-фризы при движении.
+    const prevHp = entry.hpSprite.userData.lastHp;
+    const prevMax = entry.hpSprite.userData.lastMaxHp;
+    if (prevHp !== hpToDraw || prevMax !== maxHpToDraw) {
+      const canvas = entry.hpSprite.material.map.image;
+      drawHpBar(canvas, hpToDraw, maxHpToDraw);
+      entry.hpSprite.userData.lastHp = hpToDraw;
+      entry.hpSprite.userData.lastMaxHp = maxHpToDraw;
+      entry.hpSprite.userData.maxHp = maxHpToDraw;
+      entry.hpSprite.material.map.needsUpdate = true;
+    }
 
+    this._syncHpSpritePosition(pieceId);
+  }
+
+  // ★ Синхронизация позиции HP-спрайта с жетоном — без перерисовки.
+  //   Вызывается каждый кадр из анимаций движения/атаки: дёшево, потому
+  //   что только меняет x/z у mesh, без касания canvas и текстуры.
+  _syncHpSpritePosition(pieceId) {
+    const entry = this.pieceMeshes.get(pieceId);
+    if (!entry) return;
     const p = entry.mesh.position;
     if (entry.hpSprite.parent === entry.mesh) {
       entry.hpSprite.position.set(0, COIN_HEIGHT + 0.10, -0.08);
@@ -1437,6 +1890,7 @@ export class View {
 
     st.hand.forEach((card, idx) => {
       let el = existing.get(card.uid);
+      const isNewCard = !el;
       if (!el) {
         el = document.createElement('div');
         el.dataset.uid = card.uid;
@@ -1449,7 +1903,19 @@ export class View {
         img.onerror = () => img.remove();
         el.appendChild(img);
         this._attachHoverToElement(el, card);
+
+        // ★ Новая карта невидима, пока до неё не долетит ghost из колоды.
+        //   Иначе она «появляется» мгновенно, а анимация летит поверх неё.
+        // ★ Новая карта невидима, пока до неё не долетит ghost из колоды.
+        //   Иначе она «появляется» мгновенно, а анимация летит поверх неё.
+        el.style.opacity = '0';
+        el.style.transition = 'opacity 120ms ease-out';
       }
+      // Существующие карты opacity не трогаем — им управляет анимация
+      // (или фолбэк-таймер через 1.2 с). Если сбросить здесь в '1',
+      // повторный вызов _renderHandFor раскрывает карты до того, как
+      // до них долетел ghost, — получается «карты уже лежат, потом
+      // ещё и анимация».
 
       const isSelected = this.ui.selectedCardUid === card.uid;
       const isPicked = inDiscard && this.ui.discardPickUid === card.uid;
@@ -1484,7 +1950,83 @@ export class View {
       if (currentAtIndex !== el) {
         container.insertBefore(el, currentAtIndex || null);
       }
+
+      // ★ Новая карта — планируем анимацию «из колоды в руку» после rAF.
+      // ★ Новая карта — планируем анимацию «из колоды в руку» после rAF.
+      if (isNewCard) {
+        const deckEl = side === 'white'
+          ? this.refs.whiteDeckVisual
+          : this.refs.blackDeckVisual;
+        const deckRect = deckEl ? this._bodyRectOf(deckEl) : null;
+
+        // Страховка: если анимация почему-то не запустится — карта
+        // всё равно станет видимой через 1.2 с. Иначе она осталась бы
+        // навсегда невидимой. Instant reveal — без transition, чтобы
+        // не было паразитного fade-in.
+        const elRef = el;
+        setTimeout(() => {
+          if (elRef.isConnected && elRef.style.opacity === '0') {
+            elRef.style.transition = 'none';
+            elRef.style.opacity = '1';
+            requestAnimationFrame(() => { elRef.style.transition = ''; });
+          }
+        }, 1200);
+
+        // ★ Подавляем стандартную анимацию «из колоды в руку» для карт,
+        //   которые прилетят из сброса (бонус 4). Карта уже создана с
+        //   opacity: 0 — её раскроет ghost из сброса.
+        if (this._suppressHandAnimUids.has(card.uid)) {
+          this._suppressHandAnimUids.delete(card.uid);
+          return;
+        }
+
+        if (deckRect) {
+          this._pendingHandAnims.push({
+            el, card, side, deckRect, delay: idx * 55,
+          });
+        } else {
+          // Не можем анимировать — просто раскрываем карту.
+          el.style.opacity = '1';
+        }
+      }
     });
+
+    // ★ Запускаем все запланированные анимации одним rAF.
+    if (this._pendingHandAnims.length > 0) {
+      const queue = this._pendingHandAnims;
+      this._pendingHandAnims = [];
+      requestAnimationFrame(() => {
+        for (const item of queue) {
+          if (!item.el.isConnected) continue;
+          const toRect = this._bodyRectOf(item.el);
+          if (!toRect || !item.deckRect
+              || toRect.width <= 0 || item.deckRect.width <= 0) {
+            // Layout ещё не готов — раскрываем карту сразу.
+            item.el.style.opacity = '1';
+            continue;
+          }
+          this._flyCard(item.deckRect, toRect, item.card, {
+            side: item.side,
+            duration: 320,
+            delay: item.delay,
+            startScale: 0.5,
+            // endScale НЕ задаём — _flyCard растянет ghost ровно
+            // до размера карты в руке.
+            endOpacity: 1,
+            onDone: () => {
+              // Ghost улетел и стоит ровно на месте карты с opacity: 1.
+              // Открываем настоящую карту моментально — без transition,
+              // иначе в момент между удалением ghost и полным появлением
+              // карты виден короткий провал прозрачности.
+              if (!item.el.isConnected) return;
+              item.el.style.transition = 'none';
+              item.el.style.opacity = '1';
+              requestAnimationFrame(() => { item.el.style.transition = ''; });
+            },
+          });
+        }
+      });
+    }
   }
 
   _renderDeckVisuals() {
@@ -1492,17 +2034,30 @@ export class View {
       const st = this.game.cardState[side];
       const container = side === 'white' ? this.refs.whiteDeckVisual : this.refs.blackDeckVisual;
       const countEl = side === 'white' ? this.refs.whiteDeck : this.refs.blackDeck;
-      countEl.textContent = st.deck.length;
+
+      // ★ Пока есть карты «в полёте» к колоде, показываем её прежний
+      //   размер (realCount - pending). Это и даёт эффект «колода
+      //   выросла ровно на 1 карту в момент прилёта ghost'а».
+      //   Верх колоды — карта на позиции (virtualCount - 1), т.е.
+      //   последняя из уже «доехавших». При нескольких прилётах подряд
+      //   виртуальный топ сам двигается вверх по массиву st.deck —
+      //   изображение меняется на каждом шаге.
+      const pending = this._pendingDeckReturns[side] || 0;
+      const realCount = st.deck.length;
+      const virtualCount = Math.max(0, realCount - pending);
+
+      countEl.textContent = virtualCount;
       container.innerHTML = '';
-      const count = st.deck.length;
-      if (count === 0) {
+
+      if (virtualCount === 0) {
         const layer = document.createElement('div');
         layer.className = 'deck-layer empty ' + side;
         container.appendChild(layer);
         container.onclick = (e) => this._onDeckPanelClick(e, side);
         continue;
       }
-      const maxLayers = Math.min(count, 12);
+
+      const maxLayers = Math.min(virtualCount, 12);
       const offset = 2;
       for (let i = 0; i < maxLayers; i++) {
         const layer = document.createElement('div');
@@ -1511,18 +2066,21 @@ export class View {
         layer.style.zIndex = i + 1;
         container.appendChild(layer);
       }
-      const topCard = st.deck[st.deck.length - 1];
+
+      const topCard = st.deck[virtualCount - 1];
       if (topCard && topCard.faceUp) {
         const topLayer = document.createElement('div');
         topLayer.className = 'deck-layer faceup ' + side;
         topLayer.style.bottom = ((maxLayers - 1) * offset) + 'px';
         topLayer.style.zIndex = 200;
-        const img = document.createElement('img');
-        img.src = topCard.imgPath;
-        img.onerror = () => img.remove();
-        topLayer.appendChild(img);
+        // background-image вместо <img>: рисуется из кэша в тот же
+        // кадр, без единого кадра просвета рубашки в момент смены арта.
+        topLayer.style.backgroundImage = `url('${topCard.imgPath}')`;
+        topLayer.style.backgroundSize = 'cover';
+        topLayer.style.backgroundPosition = 'center';
         container.appendChild(topLayer);
       }
+
       container.onclick = (e) => this._onDeckPanelClick(e, side);
     }
   }
@@ -1546,7 +2104,11 @@ export class View {
       const countEl = side === 'white' ? this.refs.whiteDiscardCount : this.refs.blackDiscardCount;
       countEl.textContent = st.discard.length;
       container.innerHTML = '';
-      const charOrder = [...this.game.getMembers(side)];
+      // У чёрных стопки сброса идут зеркально: первый член команды
+      // оказывается справа, последний — слева. Согласовано с порядком
+      // руки чёрных (index 0 у колоды справа).
+      const members = [...this.game.getMembers(side)];
+      const charOrder = side === 'black' ? members.reverse() : members;
       const grouped = {};
       charOrder.forEach(k => grouped[k] = []);
       st.discard.forEach(c => { if (grouped[c.charKey]) grouped[c.charKey].push(c); });
@@ -1560,6 +2122,7 @@ export class View {
         visible.forEach((card, i) => {
           const el = document.createElement('div');
           el.className = 'discard-mini ' + (side === 'white' ? 'white-card' : 'black-card');
+          el.dataset.uid = card.uid;
           const img = document.createElement('img');
           img.src = card.imgPath;
           img.onerror = () => img.remove();
@@ -1867,6 +2430,7 @@ export class View {
     const st = this.game.cardState[side];
     const mc = this.refs.lbpMiniCards;
     mc.classList.remove('hidden');
+    mc.classList.toggle('black-side', side === 'black');
     mc.innerHTML = '';
 
     st.hand.forEach((card) => {
@@ -1999,6 +2563,7 @@ export class View {
     game.revealState.cards.forEach(card => {
       const el = document.createElement('div');
       el.className = 'reveal-card';
+      el.dataset.cardUid = card.uid;
       const img = document.createElement('img');
       img.src = card.imgPath;
       img.onerror = () => img.remove();
@@ -2071,6 +2636,7 @@ export class View {
     const st = this.game.cardState[side];
     const mc = this.refs.lbpMiniCards;
     mc.classList.remove('hidden');
+    mc.classList.toggle('black-side', side === 'black');
     mc.innerHTML = '';
 
     st.hand.forEach((card) => {
@@ -3931,15 +4497,26 @@ export class View {
       this.ui.discardLocked = false;
     };
 
-    r.endTurnBtn.onclick = (e) => {
+    r.endTurnBtn.onclick = async (e) => {
       e.stopPropagation();
       if (this.animating || this.game.gameOver) return;
       if (this.game.pendingEndTurnAfterOrbs) return;
 
-      if (this.game.revealState.active) {
-        const res = this.game.abortReveal();
-        if (res.ok) this.playEvents(res.events);
-        this._hideLocationPanel();
+      // ★ Защита от даблклика: пока идёт последовательный возврат карт
+      //   вскрытия, повторный клик игнорируется. Иначе второй клик
+      //   запустил бы параллельный цикл и отправил лишние action'ы.
+      if (this.game.revealState.active && !this._abortingReveal) {
+        this._abortingReveal = true;
+        try {
+          const side = this.game.revealState.side;
+          const uids = this.game.revealState.cards.slice().reverse().map(c => c.uid);
+          for (let i = 0; i < uids.length; i++) {
+            this.dispatch({ kind: 'locationBonus2Resolve', side, cardUid: uids[i], action: 'return' });
+            if (i < uids.length - 1) await new Promise(res => setTimeout(res, 120));
+          }
+        } finally {
+          this._abortingReveal = false;
+        }
       }
 
       if (this.ui.endTurnPanelOpen) { this._cancelEndTurnConfirm(); return; }
@@ -4510,6 +5087,7 @@ export class View {
         this._startReviveSink(ev.pieceId, { waitDuration: 0.45, launchExploreOrbs: true });
         break;
       case 'turnChanged':          this._onTurnChanged(ev); break;
+      case 'deckReshuffled':       this._animateDeckReshuffle(ev.side); break;
       case 'locationBonus5Applied':this._animateTeleport(ev); break;
       case 'gameWon':              this._showVictory(ev.winner); break;
       case 'captainBuffApplied':   this._updateHpDisplay(ev.pieceId); break;
@@ -4520,11 +5098,21 @@ export class View {
         this._resetSelectionLocal();
         break;
       case 'revealFinished':       this._hideLocationPanel(); break;
-      case 'locationBonus2Started':this._renderLocation2Panel(); break;
-      case 'locationBonus2Resolved':this._renderLocation2Panel(); break;
+      case 'locationBonus2Started':
+        this._renderLocation2Panel();
+        this._animateBonus2Reveal(ev.side, ev.cards);
+        break;
+      case 'locationBonus2Resolved':
+        this._animateBonus2Resolve(ev);
+        break;
       case 'locationBonus1Applied':this._hideLocationPanel(); break;
-      case 'locationBonus4Applied':this._hideLocationPanel(); break;
-      case 'revealAborted':        this._hideLocationPanel(); break;
+      case 'locationBonus4Applied': this._animateBonus4(ev); break;
+      case 'revealAborted':
+        // В штатном UI abort больше не вызывается (end-turn теперь
+        // разрешает карты по одной). На случай внешнего abort'а
+        // (например, из мультиплеера) просто перерисовываем колоду.
+        this._renderDeckVisuals();
+        break;
       case 'mirrorAttached':       break;
       case 'mirrorUsed':           break;
       case 'mirrorDropped':        break;
@@ -4553,7 +5141,7 @@ export class View {
       const p0 = waypoints[segIdx], p1 = waypoints[segIdx + 1];
       entry.mesh.position.x = p0.x + (p1.x - p0.x) * segFrac;
       entry.mesh.position.z = p0.z + (p1.z - p0.z) * segFrac;
-      this._updateHpDisplay(ev.pieceId);
+      this._syncHpSpritePosition(ev.pieceId);
       if (t < 1) requestAnimationFrame(tick);
       else {
         this.animating = null;
@@ -4603,7 +5191,7 @@ export class View {
           Math.sin(f * Math.PI) * 0.35,
           startPos.z + (peak.z - startPos.z) * f
         );
-        this._updateHpDisplay(ev.attackerId);
+        this._syncHpSpritePosition(ev.attackerId);
         requestAnimationFrame(tick);
         return;
       }
@@ -4630,7 +5218,7 @@ export class View {
           Math.sin(f * Math.PI) * 0.2,
           peak.z + (startPos.z - peak.z) * f
         );
-        this._updateHpDisplay(ev.attackerId);
+        this._syncHpSpritePosition(ev.attackerId);
         requestAnimationFrame(tick);
         return;
       }
@@ -4813,6 +5401,10 @@ export class View {
     this.ui.discardPickUid = null;
     this.ui.endTurnPanelOpen = false;
     this._pendingFinishEndTurn = false;
+    // ★ Сбрасываем override топа колоды — на новом ходу промежуточные
+    //   картинки из abort бонуса 2 больше не актуальны.
+    this._pendingDeckReturns = { white: 0, black: 0 };
+    this._abortingReveal = false;
     this._resetSelectionLocal();
     this._updateConditionalArrows();
     this._renderLocationBonusButtons();
@@ -4826,6 +5418,7 @@ export class View {
     this.queuedRevives.length = 0;
     this.revivingIds.clear();
     this.attackOverrides.clear();
+    this._pendingDeckReturns = { white: 0, black: 0 };
     if (this.animating && this.animating.kind === 'attack') {
       this.animating = null;
     }
@@ -5082,6 +5675,14 @@ export class View {
       // Анимация закончилась — если в очереди ждут события, обрабатываем.
       if (!this.animating && this._eventQueue.length > 0) {
         this._drainEventQueue();
+      }
+
+      // ★ Или, если сервер прислал новый state, пока мы играли
+      //   анимацию, — теперь, когда всё успокоилось, применяем его.
+      if (!this.animating && this._eventQueue.length === 0
+          && this._pendingStateSync) {
+        this._pendingStateSync = false;
+        this.syncFromGame();
       }
 
       if (this.stars) this.stars.rotation.y = t * 0.01;

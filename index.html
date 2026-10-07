@@ -427,6 +427,10 @@
       flex-wrap: nowrap;
     }
     .lbp-mini-cards.hidden { display: none; }
+    /* Панель mini-карт для чёрных разворачивается в том же порядке,
+       что и рука чёрных — иначе клик по mini-карте попадает по не
+       той карте в руке. */
+    .lbp-mini-cards.black-side { flex-direction: row-reverse; }
     .lbp-mini-cards .discard-mini {
       position: static;
       flex-shrink: 0;
@@ -896,6 +900,12 @@
     .hand-header strong { color: #fff; }
     .played-info { display: inline; }
     .slots { display: flex; justify-content: center; gap: 10px; }
+    /* Рука чёрных зеркальна относительно белых: у чёрных колода
+       справа, поэтому index 0 (первая карта в массиве) визуально
+       находится справа, у колоды. DOM-порядок остаётся прежним —
+       все места, где используется container.children[idx], работают
+       как раньше. */
+    #hand-black-slots { flex-direction: row-reverse; }
     .hand-card {
       width: 110px; height: 156px; border-radius: 8px;
       background: linear-gradient(160deg, #2a2a4a, #15152a);
@@ -1807,6 +1817,32 @@
     html.is-mobile #discard-trigger .btn-fallback {
       font-size: 34px;
     }
+
+    /* ===== Летящие карты (ghost) ===== */
+    #fly-cards-layer {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 450;
+      overflow: visible;
+    }
+    .fly-card {
+      position: absolute;
+      left: 0; top: 0;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #0a0a14;
+      border: 2px solid #666;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.85);
+      will-change: transform, opacity;
+      transform-origin: center center;
+      pointer-events: none;
+    }
+    .fly-card img {
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
+    }
+    .fly-card.white-card { border-color: #ef1f1f; }
+    .fly-card.black-card { border-color: #ffc300; }
   </style>
 </head>
 <body>
@@ -1966,6 +2002,7 @@
   <div id="location-bonuses"></div>
   <div id="mirror-field-reminders"></div>
   <div id="reveal-cards-layer"></div>
+  <div id="fly-cards-layer"></div>
 
     <div id="discard-dim-overlay"></div>
   <button id="discard-pick-btn" class="discard-pick-btn hidden">Сбросить</button>
