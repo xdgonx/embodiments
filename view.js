@@ -531,8 +531,6 @@ export class View {
     this.revealCardElements = [];
     this.fsRequested = false;
 
-    this._pendingFinishEndTurn = false;
-
     // ★ Защита от даблклика по кнопке «Подготовка к завершению хода»,
     //   пока идёт последовательный возврат карт вскрытия (2 resolve'а
     //   с задержкой 120 мс). Явно объявлен, чтобы не полагаться на
@@ -1851,9 +1849,8 @@ export class View {
 
   _renderHands() {
     const game = this.game;
-    const blocked = game.pendingEndTurnAfterOrbs;
-    const whiteActive = game.currentTurn === 'white' && !game.gameOver && !blocked;
-    const blackActive = game.currentTurn === 'black' && !game.gameOver && !blocked;
+    const whiteActive = game.currentTurn === 'white' && !game.gameOver;
+    const blackActive = game.currentTurn === 'black' && !game.gameOver;
 
     for (const side of ['white', 'black']) {
       const st = game.cardState[side];
@@ -1884,7 +1881,7 @@ export class View {
     const inDiscard = isActive && this.ui.discardMode;
     const warningShown = isActive && this.ui.endTurnPanelOpen;
     const canPlay = isActive && !inDiscard && !this.ui.discardLocked && !game.revealState.active
-                  && st.playedThisTurn < 4 && !this.animating && !game.gameOver && !game.pendingEndTurnAfterOrbs;
+                  && st.playedThisTurn < 4 && !this.animating && !game.gameOver;
     const canDiscard = inDiscard && st.hand.length > 1 && !this.animating;
     const enabled = canPlay || canDiscard;
 
@@ -2113,11 +2110,11 @@ export class View {
       const countEl = side === 'white' ? this.refs.whiteDiscardCount : this.refs.blackDiscardCount;
       countEl.textContent = st.discard.length;
       container.innerHTML = '';
-      // У чёрных стопки сброса идут зеркально: первый член команды
-      // оказывается справа, последний — слева. Согласовано с порядком
-      // руки чёрных (index 0 у колоды справа).
-      const members = [...this.game.getMembers(side)];
-      const charOrder = side === 'black' ? members.reverse() : members;
+      // ★ Порядок стопок берём из game.getDisplayOrder — единый
+      //   источник правды для «как команда отображается». Иначе
+      //   правило «у чёрных зеркально» живёт в двух местах (CSS
+      //   для руки + JS для сброса) и легко разъезжается.
+      const charOrder = this.game.getDisplayOrder(side);
       const grouped = {};
       charOrder.forEach(k => grouped[k] = []);
       st.discard.forEach(c => { if (grouped[c.charKey]) grouped[c.charKey].push(c); });
@@ -2231,7 +2228,6 @@ export class View {
           natural = side === game.currentTurn
             && !game.locationBonusUsed[side][2]
             && !game.actionTakenThisTurn[side]
-            && !game.pendingEndTurnAfterOrbs
             && game.hasBonusAdvantage(side, 2);
         } else {
           natural = game.canUseLocationBonus(side, locId);
@@ -2258,8 +2254,6 @@ export class View {
           const revealActive = game.revealState.active && game.revealState.side === side && locId === 2;
           if (revealActive) visible = true;
           if (game.revealState.active && !revealActive) enabled = false;
-
-          if (game.pendingEndTurnAfterOrbs && !revealActive) visible = false;
         }
 
         const active = !!(this.ui.activePanel
@@ -2313,7 +2307,6 @@ export class View {
     if (side !== game.currentTurn) return;
     if (this.ui.discardMode || this.ui.discardLocked) return;
     if (game.revealState.active) return;
-    if (game.pendingEndTurnAfterOrbs) return;
 
     if (this.ui.endTurnPanelOpen) this._cancelEndTurnConfirm();
     this._resetSelectionLocal();
@@ -3594,7 +3587,6 @@ export class View {
       this.refs.endTurnBtn.classList.toggle(
         'end-turn-locked',
         !!this.ui.discardMode || !!this.ui.discardLocked
-          || !!(this.game && this.game.pendingEndTurnAfterOrbs)
       );
     }
   }
@@ -3653,7 +3645,6 @@ export class View {
 
   _onDiscardCardClick(side, idx, card) {
     if (this.animating || this.game.gameOver) return;
-    if (this.game.pendingEndTurnAfterOrbs) return;
     if (side !== this.game.currentTurn) return;
     if (!this.ui.discardMode) return;
     if (this.game.cardState[side].hand.length <= 1) return;
@@ -3678,7 +3669,6 @@ export class View {
   _onCardClick(side, index, card) {
     if (side !== this.game.currentTurn) return;
     if (this.animating || this.game.gameOver) return;
-    if (this.game.pendingEndTurnAfterOrbs) return;
     if (this.ui.discardMode) return;
     if (this.game.revealState.active) return;
 
@@ -3737,7 +3727,6 @@ export class View {
 
   _onActionButton(mode) {
     const game = this.game;
-    if (game.pendingEndTurnAfterOrbs) return;
     const cardUid = this.ui.selectedCardUid;
     if (!cardUid) return;
     const side = game.currentTurn;
@@ -4511,7 +4500,6 @@ export class View {
     r.etcConfirmBtn.onclick = (e) => {
       e.stopPropagation();
       if (this.animating || this.game.gameOver) return;
-      if (this.game.pendingEndTurnAfterOrbs) return;
       this._closeEndTurnPanel();
       this.dispatch({ kind: 'endTurn', side: this.game.currentTurn });
       this.ui.discardLocked = false;
@@ -4520,7 +4508,6 @@ export class View {
     r.endTurnBtn.onclick = async (e) => {
       e.stopPropagation();
       if (this.animating || this.game.gameOver) return;
-      if (this.game.pendingEndTurnAfterOrbs) return;
 
       // ★ Защита от даблклика: пока идёт последовательный возврат карт
       //   вскрытия, повторный клик игнорируется. Иначе второй клик
@@ -4550,7 +4537,6 @@ export class View {
     r.discardTrigger.onclick = (e) => {
       e.stopPropagation();
       if (this.animating || this.game.gameOver) return;
-      if (this.game.pendingEndTurnAfterOrbs) return;
       if (this.ui.discardLocked) return;
       this.ui.discardMode = !this.ui.discardMode;
       this.ui.discardPickUid = null;
@@ -4586,13 +4572,8 @@ export class View {
 
     r.locationBonusIcon.onclick = (e) => {
       e.stopPropagation();
-      // ★ В сетевом режиме локальный abortReveal не вызываем:
-      //   отмену вскрытия должен решать сервер, клиент только
-      //   отправляет action'ы через dispatch. Здесь лишь закрываем
-      //   UI-панель.
-      if (!this.net && this.game.revealState && this.game.revealState.active) {
-        const res = this.game.abortReveal();
-        if (res.ok) this.playEvents(res.events);
+      if (this.game.revealState && this.game.revealState.active) {
+        this.dispatch({ kind: 'abortReveal', side: this.game.revealState.side });
       }
       if (this.ui.activePanel || !r.bonus2Confirm.classList.contains('hidden')) {
         this._hideLocationPanel();
@@ -4890,7 +4871,6 @@ export class View {
   _onCanvasClick(e) {
     const game = this.game;
     if (!game || game.gameOver || this.animating) return;
-    if (game.pendingEndTurnAfterOrbs) return;
     if (this.ui.discardMode || this.ui.discardLocked) return;
     if (game.revealState.active) return;
 
@@ -5115,12 +5095,6 @@ export class View {
       case 'locationBonus5Applied':this._animateTeleport(ev); break;
       case 'gameWon':              this._showVictory(ev.winner); break;
       case 'captainBuffApplied':   this._updateHpDisplay(ev.pieceId); break;
-      case 'pendingEndTurnAfterOrbs':
-        this._pendingFinishEndTurn = true;
-        this._closeEndTurnPanel();
-        this._hideLocationPanel();
-        this._resetSelectionLocal();
-        break;
       case 'revealFinished':       this._hideLocationPanel(); break;
       case 'locationBonus2Started':
         this._renderLocation2Panel();
@@ -5340,41 +5314,22 @@ export class View {
         o.sprite.material.dispose();
         this.powerOrbs.splice(i, 1);
 
-        // ★ В сетевом режиме view не мутирует game: сервер сам
-        //   применит уменьшение могущества и завершение хода, а
-        //   клиент получит новый state через net.onState. Локально
-        //   только удаляем спрайт и ждём синхронизацию — её
-        //   выполнит `_pendingStateSync` в основном цикле.
-        //   Иначе получим двойное применение (и локально, и на
-        //   сервере) и рассинхрон.
+        // ★ Вот здесь — и только здесь — уменьшается могущество.
+        //   game.might меняется ровно в момент прилёта пузырька.
         if (this.net) continue;
-
         const res = this.game.applyMightChange(o.affectedSide, -1);
         if (res && res.events) {
           for (const ev of res.events) {
             try { this.playEvent(ev); } catch (err) { console.error('playEvent error:', ev && ev.kind, err); }
           }
         }
-
         if (this.game.gameOver) {
           this.powerOrbs.length = 0;
           this.renderAll();
           return;
         }
-
-        // targetPos пересчитает _renderCaptains() ниже,
-        // а _updateCaptainMovement() в главном цикле подтянет жетон.
         this._renderCaptains();
         this._renderTurnPanel();
-
-        if (this._pendingFinishEndTurn) {
-          const anyL3 = this.powerOrbs.some(x => x.kind === 'location3');
-          if (!anyL3) {
-            this._pendingFinishEndTurn = false;
-            const r2 = this.game.finishEndTurnAfterOrbs();
-            if (r2 && r2.ok && r2.events) this.playEvents(r2.events);
-          }
-        }
       }
     }
   }
@@ -5433,7 +5388,6 @@ export class View {
     this.ui.discardLocked = false;
     this.ui.discardPickUid = null;
     this.ui.endTurnPanelOpen = false;
-    this._pendingFinishEndTurn = false;
     // ★ Сбрасываем override топа колоды — на новом ходу промежуточные
     //   картинки из abort бонуса 2 больше не актуальны.
     this._pendingDeckReturns = { white: 0, black: 0 };
@@ -5486,7 +5440,6 @@ export class View {
       o.sprite.material.dispose();
     }
     this.powerOrbs.length = 0;
-    this._pendingFinishEndTurn = false;
     if (this.refs.endTurnBtn) this.refs.endTurnBtn.disabled = true;
 
     const overlay = this.refs.victoryOverlay;
@@ -5785,12 +5738,11 @@ export class View {
 
       if (this.refs && this.refs.endTurnBtn) {
         const blocked = !!this.animating
-          || !!(this.game && (this.game.gameOver || this.game.pendingEndTurnAfterOrbs));
+          || !!(this.game && this.game.gameOver);
 
         this.refs.endTurnBtn.disabled = blocked;
 
-        const lockedLook = !!(this.game && (this.game.pendingEndTurnAfterOrbs
-                                         || this.ui.discardMode
+        const lockedLook = !!(this.game && (this.ui.discardMode
                                          || this.ui.discardLocked));
         this.refs.endTurnBtn.classList.toggle('end-turn-locked', lockedLook);
       }

@@ -190,6 +190,11 @@ export class Game {
     this.currentTurn = 'white';
     this.turnNumber = 1;
     this.locationBonusUsed = { white: this._emptyBonusMap(), black: this._emptyBonusMap() };
+	// ★ Три флага трёх этапов хода. Полное описание — в блоке над
+    //   классом Game. Коротко:
+    //   actionTakenThisTurn   — «этап 1 закончился, бонусы нельзя»;
+    //   hasDiscardedThisTurn  — «этап 3 начался, играть нельзя»;
+    //   playedThisTurn        — счётчик 0..4 (внутри cardState), лимит хода.
     this.actionTakenThisTurn = { white: false, black: false };
     this.hasDiscardedThisTurn = { white: false, black: false };
     this.revealState = { active: false, side: null, cards: [] };
@@ -199,8 +204,7 @@ export class Game {
     // ★ НОВОЕ: uid карты, которая только что ушла в сброс (для свечения)
     this.highlightUid = { white: null, black: null };
 
-    this.bonusAvailabilitySnapshot = { white: {}, black: {} };
-    this.pendingEndTurnAfterOrbs = false;
+	this.bonusAvailabilitySnapshot = { white: {}, black: {} };
 
     this.turnSnapshot = null;
 
@@ -306,6 +310,15 @@ export class Game {
   getPiece(id) { return this.pieces.find(p => p.id === id) || null; }
   getCaptainProfileKey(side) { return this.teamConfig[side].captain; }
   getMembers(side) { return this.teamConfig[side].members; }
+
+  // ★ Порядок отображения состава: у чёрных зеркально, потому что их
+  //   колода/рука визуально развёрнуты (см. CSS #hand-black-slots).
+  //   Сюда должны обращаться и рука (через CSS), и сброс (через JS),
+  //   чтобы порядок стопок совпадал с порядком карт в руке.
+  getDisplayOrder(side) {
+    const members = [...this.teamConfig[side].members];
+    return side === 'black' ? members.reverse() : members;
+  }
   getPiecesOnCell(cellId) { return this.pieces.filter(p => p.cellId === cellId); }
 
   isOnBase(piece) {
@@ -339,6 +352,11 @@ export class Game {
     return { inf, count };
   }
 
+  // Бонусы локаций — этап 1. Доступны только до первого действия
+  // (actionTaken) и до первого сброса (hasDiscarded) в этом ходу.
+  // После бонуса сам по себе actionTaken НЕ ставится, но бонус
+  // помечает locationBonusUsed[loc], что блокирует повторный бонус
+  // той же локации.
   canUseLocationBonus(side, logicalLocId) {
     if (this.gameOver) return false;
     if (this.currentTurn !== side) return false;
@@ -346,7 +364,6 @@ export class Game {
     if (this.hasDiscardedThisTurn[side]) return false;
     if (this.locationBonusUsed[side][logicalLocId]) return false;
     if (this.revealState.active) return false;
-    if (this.pendingEndTurnAfterOrbs) return false;
     if (!this.hasBonusAdvantage(side, logicalLocId)) return false;
 
     const st = this.cardState[side];
@@ -391,27 +408,7 @@ export class Game {
     return result;
   }
 
-  getReachableCells(piece) {
-    const visited = new Map();
-    visited.set(piece.cellId, 0);
-    const queue = [piece.cellId];
-    while (queue.length) {
-      const cur = queue.shift();
-      const d = visited.get(cur);
-      if (d >= piece.speed) continue;
-      const neigh = this.getNeighborsByCell(cur, piece.side);
-      for (const nid of neigh) {
-        if (visited.has(nid)) continue;
-        if (this.pieces.some(p => p !== piece && p.cellId === nid)) continue;
-        visited.set(nid, d + 1);
-        queue.push(nid);
-      }
-    }
-    visited.delete(piece.cellId);
-    return new Set(visited.keys());
-  }
-
-  findPath(piece, targetId) {
+  _bfs(piece, targetId = null) {
     const visited = new Map();
     const parent = new Map();
     visited.set(piece.cellId, 0);
@@ -427,8 +424,20 @@ export class Game {
         visited.set(nid, d + 1);
         parent.set(nid, cur);
         queue.push(nid);
+        if (targetId !== null && nid === targetId) return { visited, parent };
       }
     }
+    return { visited, parent };
+  }
+
+  getReachableCells(piece) {
+    const { visited } = this._bfs(piece);
+    visited.delete(piece.cellId);
+    return new Set(visited.keys());
+  }
+
+  findPath(piece, targetId) {
+    const { visited, parent } = this._bfs(piece, targetId);
     if (!visited.has(targetId)) return null;
     const path = [targetId];
     let c = targetId;
@@ -516,6 +525,7 @@ export class Game {
         case 'locationBonus4':        result = this._handleLocationBonus4(action, events); break;
         case 'locationBonus5':        result = this._handleLocationBonus5(action, events); break;
         case 'useMirror':             result = this._handleUseMirror(action, events); break;
+        case 'abortReveal':           result = this._handleAbortReveal(action, events); break;
         case 'undo':                  result = this._handleUndo(action, events); break;
         default: return { ok: false, error: `Неизвестное действие: ${action.kind}` };
       }
@@ -527,23 +537,8 @@ export class Game {
     return { ok: true, events, state: this.getState() };
   }
 
-    finishEndTurnAfterOrbs() {
-    if (!this.pendingEndTurnAfterOrbs) return { ok: true, events: [] };
-    const events = [];
-    this.pendingEndTurnAfterOrbs = false;
-    this._doFinishEndTurn(events);
-    return { ok: true, events, state: this.getState() };
-  }
-
-  // ★ Отмена активного вскрытия (бонус 2 локации). Используется, когда
-  //   игрок открывает панель завершения хода не подтверждая вскрытие.
-  //   Публичный метод — чтобы в мультиплеере клиент не мутировал state
-  //   напрямую, а посылал это действие.
-  abortReveal() {
-    if (!this.revealState.active) {
-      return { ok: true, events: [], state: this.getState() };
-    }
-    const events = [];
+  _abortRevealInternal(events) {
+    if (!this.revealState.active) return;
     const s = this.revealState.side;
     this.revealState.cards.slice().reverse().forEach(c => {
       c.faceUp = true;
@@ -551,25 +546,27 @@ export class Game {
     });
     events.push({ kind: 'revealAborted', side: s });
     this.revealState = { active: false, side: null, cards: [] };
-    this._takeTurnSnapshot();
-    return { ok: true, events, state: this.getState() };
   }
 
+  _handleAbortReveal(action, events) {
+    const { side } = action;
+    if (!this.revealState.active) return { ok: true };
+    if (this.revealState.side !== side) return { ok: false, error: 'Не ваш reveal' };
+    this._abortRevealInternal(events);
+    this._takeTurnSnapshot();
+    return { ok: true };
+  }
+
+  // ★ Вызывается из view, когда пузырёк могущества долетел до жетона
+  //   капитана. Именно здесь — и только здесь — game.might уменьшается.
   applyMightChange(side, delta) {
     const events = [];
     this._changeMight(side, delta, events);
     this._checkVictory(events);
     return { ok: true, events, state: this.getState() };
   }
-
-  applyReviveBuff(pieceId) {
-    const events = [];
-    const piece = this.getPiece(pieceId);
-    if (!piece) return { ok: false, events };
-    this._applyReviveBuff(piece, events);
-    return { ok: true, events, state: this.getState() };
-  }
-
+  // Игра карты — этап 2. Заблокирована, если игрок уже перешёл на этап 3
+  // (hasDiscarded) или исчерпал лимит действий в этом ходу (playedThisTurn).
   _handlePlayCard(action, events) {
     const { side, cardUid, mode } = action;
     if (side !== this.currentTurn) return { ok: false, error: 'Не ваш ход' };
@@ -597,15 +594,17 @@ export class Game {
 
     for (let i = 0; i < path.length - 1; i++) {
       const neighbors = this.getNeighborsByCell(path[i], side);
-      if (!neighbors.includes(path[i + 1])) return { ok: false, error: 'Недопустимый шаг по пути' };
-    }
-    const dest = path[path.length - 1];
-    if (this.pieces.some(p => p !== piece && p.cellId === dest)) {
-      return { ok: false, error: 'Клетка занята' };
+      if (!neighbors.includes(path[i + 1])) {
+        return { ok: false, error: 'Недопустимый шаг по пути' };
+      }
+      // ★ Проверяем занятость на каждом шаге, включая промежуточные клетки.
+      if (this.pieces.some(p => p !== piece && p.cellId === path[i + 1])) {
+        return { ok: false, error: 'Путь заблокирован' };
+      }
     }
 
     this._consumeCard(side, card, events);
-    piece.cellId = dest;
+    piece.cellId = path[path.length - 1];
     events.push({ kind: 'pieceMoved', pieceId: piece.id, path: [...path] });
     return { ok: true };
   }
@@ -694,7 +693,11 @@ export class Game {
     if (!card) return { ok: false, error: 'Карты нет в руке' };
     if (this.cardState[side].hand.length <= 1) return { ok: false, error: 'Нельзя сбросить последнюю карту' };
 
-    // _consumeCard уже установит highlightUid и playedThisTurn
+    // ★ _consumeCard:
+    //   — инкрементит playedThisTurn (сброс = действие, тратит лимит 4);
+    //   — ставит actionTakenThisTurn (бонусы локаций больше нельзя).
+    //   Дополнительно ставим hasDiscardedThisTurn — «этап 3 начался,
+    //   играть карты нельзя до конца хода».
     this._consumeCard(side, card, events);
     this.hasDiscardedThisTurn[side] = true;
     events.push({ kind: 'cardDiscarded', side, card });
@@ -704,28 +707,9 @@ export class Game {
   _handleEndTurn(action, events) {
     const { side } = action;
     if (side !== this.currentTurn) return { ok: false, error: 'Не ваш ход' };
-    // ★ Защита от повторного вызова, пока летят пузырьки локации 3.
-    if (this.pendingEndTurnAfterOrbs) {
-      return { ok: false, error: 'Ход уже завершается' };
-    }
-
-    if (this.revealState.active) {
-      const s = this.revealState.side;
-      this.revealState.cards.slice().reverse().forEach(c => {
-        c.faceUp = true;
-        this.cardState[s].deck.push(c);
-      });
-      events.push({ kind: 'revealAborted', side: s });
-      this.revealState = { active: false, side: null, cards: [] };
-    }
-
-    const damage = this._applyLocation3Damage(side, events);
-    if (damage > 0) {
-      this.pendingEndTurnAfterOrbs = true;
-      events.push({ kind: 'pendingEndTurnAfterOrbs', side, damage });
-      return { ok: true };
-    }
-
+	
+    this._abortRevealInternal(events);
+    this._applyLocation3Damage(side, events);
     this._doFinishEndTurn(events);
     return { ok: true };
   }
@@ -736,6 +720,9 @@ export class Game {
     if (this.currentTurn === 'white') this.currentTurn = 'black';
     else { this.currentTurn = 'white'; this.turnNumber++; }
 
+    // ★ Сбрасываем состояние всех трёх этапов для уходящего игрока.
+    //   playedThisTurn обнуляется не здесь, а ниже — у того, к кому
+    //   перешёл ход (cardState[this.currentTurn].playedThisTurn = 0).
     this.actionTakenThisTurn[from] = false;
     this.hasDiscardedThisTurn[from] = false;
     this.locationBonusUsed[from] = this._emptyBonusMap();
@@ -752,12 +739,11 @@ export class Game {
     const enemySide = side === 'white' ? 'black' : 'white';
     const me = this.getCenterStats(side);
     const enemy = this.getCenterStats(enemySide);
-    if (me.inf <= enemy.inf) return 0;
+    if (me.inf <= enemy.inf) return;
     const diff = me.inf - enemy.inf;
     const damage = Math.min(2, diff, me.count);
-    if (damage <= 0) return 0;
+    if (damage <= 0) return;
     events.push({ kind: 'powerOrbsFromCenter', side, count: damage, enemySide });
-    return damage;
   }
 
   _handleLocationBonus1(action, events) {
@@ -883,9 +869,12 @@ export class Game {
     const card = piece.mirror;
     const owner = piece.mirrorSide || side;
     this.cardState[owner].discard.push(card);
-    this.highlightUid[owner] = card.uid;                      // ★
+    this.highlightUid[owner] = card.uid;                     
     piece.mirror = null;
     piece.mirrorSide = null;
+    // ★ Зерцало — бесплатное действие: не тратит playedThisTurn и не
+    //   ставит hasDiscardedThisTurn. Но это «первое действие хода»,
+    //   поэтому бонусы локаций после него недоступны.
     this.actionTakenThisTurn[side] = true;
     events.push({ kind: 'mirrorUsed', ownerId: piece.id, card });
     return { ok: true };
@@ -900,11 +889,12 @@ export class Game {
     return { ok: true };
   }
 
-  // Снимает карту с руки и (по умолчанию) кладёт в сброс.
-  // opts.toDiscard === false — карта уходит НЕ в сброс, а сразу
-  // в другое место (например, в зерцало). Сброс в этом случае
-  // произойдёт позже: когда карту сыграют из зерцала, либо когда
-  // персонаж с зерцалом погибнет/исследует.
+  // Снимает карту с руки.
+  //   opts.toDiscard === false — карта уходит не в сброс, а в зерцало
+  //                              (см. _playMirror).
+  //   playedThisTurn++ — ЛЮБОЙ уход карты из руки считается действием,
+  //                      и игра, и сброс расходуют общий лимит 4.
+  //   actionTakenThisTurn = true — «этап 1 (бонусы) закончился».
   _consumeCard(side, card, events, opts = {}) {
     const toDiscard = opts.toDiscard !== false;
     const st = this.cardState[side];
@@ -1008,9 +998,7 @@ export class Game {
       revealState: this.revealState,
       gameOver: this.gameOver,
       winner: this.winner,
-      bonusAvailabilitySnapshot: this.bonusAvailabilitySnapshot,
-      pendingEndTurnAfterOrbs: this.pendingEndTurnAfterOrbs,
-      highlightUid: this.highlightUid,
+      bonusAvailabilitySnapshot: this.bonusAvailabilitySnapshot
     }));
   }
 
@@ -1037,8 +1025,7 @@ export class Game {
     this.gameOver = s.gameOver;
     this.winner = s.winner;
     this.bonusAvailabilitySnapshot = s.bonusAvailabilitySnapshot;
-    this.pendingEndTurnAfterOrbs = s.pendingEndTurnAfterOrbs;
-    this.highlightUid = s.highlightUid || { white: null, black: null };
+    if (!this.highlightUid) this.highlightUid = { white: null, black: null };
   }
 
   getState() { return this._snapshot(); }
