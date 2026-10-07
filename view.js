@@ -23,7 +23,7 @@ document.documentElement.classList.toggle('is-touch', IS_TOUCH);
 document.documentElement.classList.toggle('is-mobile', IS_MOBILE);
 
 const MOBILE_BONUS_Y_OFFSET = 10;
-const MOBILE_MIRROR_Y_LIFT = 16;
+const MOBILE_MIRROR_Y_LIFT = 18;
 const LOCATION_BONUS_POSITIONS = {
   white: { 1:{x:400,y:1220}, 2:{x:1150,y:1220}, 4:{x:2630,y:1220}, 5:{x:3380,y:1220} },
   black: { 1:{x:3680,y:1220}, 2:{x:2930,y:1220}, 4:{x:1450,y:1220}, 5:{x:700,y:1220} },
