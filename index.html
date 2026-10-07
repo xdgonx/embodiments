@@ -1984,6 +1984,17 @@
   import { Game } from './game.js';
   import { View } from './view.js';
 
+  // position: fixed внутри трансформированного <body> работает как
+  // position: absolute относительно body — размеры оверлеев получаются
+  // неверными (в вертикальной ориентации «Поверните телефон» сжимается
+  // до полоски). Переносим полноэкранные оверлеи в <html>, где transform
+  // отсутствует, — тогда fixed считается от вьюпорта.
+  ['orientation-overlay', 'card-overlay', 'tablet-overlay', 'deck-overlay', 'victory-overlay']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (el) document.documentElement.appendChild(el);
+    });
+
   const params = new URLSearchParams(location.search);
 
   const seedParam = params.get('seed');
