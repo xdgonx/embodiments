@@ -4844,7 +4844,18 @@ export class View {
     });
 
     document.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return;
+      // ★ Второй палец — это уже pinch-жест, а не long-press.
+      //   Гасим таймер, и если ctrl-режим уже был включён (первым
+      //   пальцем успел сработать long-press) — выходим из него.
+      //   Иначе во время pinch-зума висят подсветки под пальцем.
+      if (e.touches.length !== 1) {
+        if (this.longPressTimer) {
+          clearTimeout(this.longPressTimer);
+          this.longPressTimer = null;
+        }
+        if (this.longPressActive) this._longPressExit();
+        return;
+      }
       if (this.longPressActive) return;
       if (this._isUiControl(e.target)) return;
       const t = e.touches[0];
@@ -4927,6 +4938,14 @@ export class View {
         active.set(t.identifier, { x: t.clientX, y: t.clientY });
       }
       if (active.size >= 2) {
+        // ★ Второй палец — это уже жест, а не long-press. Гасим таймер
+        //   и выходим из ctrl-режима (если он успел включиться первым
+        //   пальцем): во время pinch-зума подсветки не показываем.
+        if (this.longPressTimer) {
+          clearTimeout(this.longPressTimer);
+          this.longPressTimer = null;
+        }
+        if (this.longPressActive) this._longPressExit();
         // ★ Гасим браузерный pinch-zoom страницы и подавляем следующий
         //   click — иначе после жеста по полю прилетит «фантомный» тап.
         this._suppressClickUntil = performance.now() + 400;
@@ -4986,6 +5005,16 @@ export class View {
     // ★ Колесо мыши — бонус для десктопа, не мешает мобильной логике.
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
+	        // ★ Если в момент прокрутки зажат Ctrl (активен ctrl-режим и
+      //   висит планшет под курсором) — прячем оверлеи на время
+      //   зума. Прокрутка = «навигация по полю», не «осмотр жетона».
+      if (this.ctrlPressed) {
+        this._hideTabletOverlay();
+        this._hideCardOverlay();
+        this.hoveredPieceId = null;
+        this.hoveredCaptainSide = null;
+        this.hoveredBadgeCard = null;
+      }
       const factor = Math.exp(-e.deltaY * 0.0015);
       let newZoom = this._zoom * factor;
       newZoom = Math.max(this._zoomMin, Math.min(this._zoomMax, newZoom));
