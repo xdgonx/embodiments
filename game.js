@@ -183,12 +183,18 @@ export class Game {
 
     this.pieces = [];
     this.might = { white: 9, black: 10 };
+    // ★ Журнал изменений могущества. Каждая запись — одно событие
+    //   (прилёт пузырька), хранится в виде:
+    //   { turn, side, reason, delta, mightAfter, whiteMight, blackMight }.
+    //   Используется в конце партии для отрисовки графика «Хроника».
+    this.history = [];
     this.cardState = {
       white: { deck: [], hand: [], discard: [], playedThisTurn: 0 },
       black: { deck: [], hand: [], discard: [], playedThisTurn: 0 },
     };
     this.currentTurn = 'white';
-    this.turnNumber = 1;
+    this.turnNumber = 1;   // номер раунда (белые+чёрные)
+    this.halfTurn = 1;     // номер полухода: 1=белые 1, 2=чёрные 1, 3=белые 2, ...
     this.locationBonusUsed = { white: this._emptyBonusMap(), black: this._emptyBonusMap() };
 	// ★ Три флага трёх этапов хода. Полное описание — в блоке над
     //   классом Game. Коротко:
@@ -559,9 +565,42 @@ export class Game {
 
   // ★ Вызывается из view, когда пузырёк могущества долетел до жетона
   //   капитана. Именно здесь — и только здесь — game.might уменьшается.
-  applyMightChange(side, delta) {
+  //   reason — опционально: 'death' | 'explore' | 'location3'.
+  //   Используется для цветовой кодировки в графике конца партии.
+  applyMightChange(side, delta, reason = null, actor = null, turn = null) {
     const events = [];
+    const before = this.might[side];
     this._changeMight(side, delta, events);
+    const after = this.might[side];
+    // ★ Пишем событие в историю не только когда могущество реально
+    //   изменилось, но и когда оно уже 0 и мы пытаемся увести его
+    //   в минус. Это «избыточный урон»: например, при могуществе 1
+    //   игрок исследует базу, которая выпускает 3 пузырька — первые
+    //   два должны быть видны на «Хронике могущества», хотя may
+    //   уже некуда падать. В графе важен сам факт события, а не
+    //   дельта, поэтому для таких записей delta = 0.
+    const isNegative = delta < 0;
+    const clampedAtZero = (after === before) && (before === 0) && isNegative;
+    if (after !== before || clampedAtZero) {
+      this.history.push({
+        // ★ turn и actor фиксируются в момент выпуска пузырька
+        //   (см. view.js: _launchDeathOrb / _launchExploreOrbs /
+        //   _animateOrbsFromCenter), а не в момент прилёта. Иначе
+        //   пузырёк, прилетевший после смены хода, попал бы не в
+        //   свою колонку.
+        // ★ turn = номер полухода (halfTurn). Раньше здесь стоял
+        //   turnNumber (номер раунда), из-за чего белые и чёрные
+        //   одного раунда склеивались в одну колонку на графике.
+        turn: turn != null ? turn : this.halfTurn,
+        side,
+        actor: actor != null ? actor : this.currentTurn,
+        reason,
+        delta: after - before,
+        mightAfter: after,
+        whiteMight: this.might.white,
+        blackMight: this.might.black,
+      });
+    }
     this._checkVictory(events);
     return { ok: true, events, state: this.getState() };
   }
@@ -719,6 +758,10 @@ export class Game {
     this.highlightUid[from] = null;                           // ★
     if (this.currentTurn === 'white') this.currentTurn = 'black';
     else { this.currentTurn = 'white'; this.turnNumber++; }
+    // ★ Полуход растёт на каждом завершении хода, а не только на
+    //   границе раунда. Нужен для «Хроники могущества»: там каждая
+    //   колонка — это один полуход (ход белых или ход чёрных).
+    this.halfTurn++;
 
     // ★ Сбрасываем состояние всех трёх этапов для уходящего игрока.
     //   playedThisTurn обнуляется не здесь, а ниже — у того, к кому
@@ -743,7 +786,18 @@ export class Game {
     const diff = me.inf - enemy.inf;
     const damage = Math.min(2, diff, me.count);
     if (damage <= 0) return;
-    events.push({ kind: 'powerOrbsFromCenter', side, count: damage, enemySide });
+    // ★ actor и turn фиксируем здесь — на момент _applyLocation3Damage
+    //   halfTurn ещё «свой» (инкремент в _doFinishEndTurn идёт позже,
+    //   уже после push'а этого события). Раньше turn не передавался,
+    //   и view читал this.game.halfTurn на этапе обработки события —
+    //   то есть уже после инкремента, из-за чего пузырьки центра
+    //   уезжали в колонку следующего раунда.
+    events.push({
+      kind: 'powerOrbsFromCenter',
+      side, count: damage, enemySide,
+      actor: side,
+      turn: this.halfTurn,
+    });
   }
 
   _handleLocationBonus1(action, events) {
@@ -989,9 +1043,11 @@ export class Game {
         captainBuffApplied: p.captainBuffApplied,
       })),
       might: this.might,
+      history: this.history,
       cardState: this.cardState,
       currentTurn: this.currentTurn,
       turnNumber: this.turnNumber,
+      halfTurn: this.halfTurn,
       locationBonusUsed: this.locationBonusUsed,
       actionTakenThisTurn: this.actionTakenThisTurn,
       hasDiscardedThisTurn: this.hasDiscardedThisTurn,
@@ -1015,9 +1071,12 @@ export class Game {
       profile: PROFILES[p.profileKey],
     }));
     this.might = s.might;
+    this.history = s.history || [];
     this.cardState = s.cardState;
     this.currentTurn = s.currentTurn;
     this.turnNumber = s.turnNumber;
+    // ★ Fallback для старых снапшотов, где halfTurn ещё не было.
+    this.halfTurn = s.halfTurn != null ? s.halfTurn : (s.turnNumber || 1);
     this.locationBonusUsed = s.locationBonusUsed;
     this.actionTakenThisTurn = s.actionTakenThisTurn;
     this.hasDiscardedThisTurn = s.hasDiscardedThisTurn;

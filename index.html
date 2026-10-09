@@ -1339,9 +1339,34 @@
     @media (hover: hover) {
       #victory-restart:hover { background: #3c8; transform: translateY(-2px) scale(1.03); }
     }
-    @keyframes victoryPop {
-      from { transform: scale(0.6); opacity: 0; }
-      to   { transform: scale(1); opacity: 1; }
+
+    .victory-graph-wrap {
+      margin: 18px auto 22px;
+      padding: 10px 14px 14px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 12px;
+      max-width: 700px;
+    }
+    .victory-graph-title {
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #888;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+    .victory-panel.white-team .victory-graph-title { color: #ff8888; }
+    .victory-panel.black-team .victory-graph-title { color: #ffdf77; }
+    #victory-graph {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+    }
+    @media (max-width: 1200px), (pointer: coarse) {
+      .victory-graph-wrap { max-width: 92vw; padding: 8px 10px 10px; }
+      .victory-graph-title { font-size: 10px; letter-spacing: 1px; }
     }
 
     .location-bonus-btn {
@@ -1855,6 +1880,10 @@
     <div class="victory-panel white-team">
       <div class="victory-title">🏆 Победа белых!</div>
       <div class="victory-sub">Могущество противника исчерпано</div>
+      <div class="victory-graph-wrap">
+        <div class="victory-graph-title">Хроника могущества</div>
+        <canvas id="victory-graph" width="1000" height="480"></canvas>
+      </div>
       <button id="victory-restart">Начать заново</button>
     </div>
   </div>

@@ -407,7 +407,7 @@ function createTokenTexture(img, outlineCss) {
 // Пузырьки могущества
 // ============================================================
 
-function createOrbSprite(colorCss, iconImage) {
+function createOrbSprite(colorCss, iconImage, opts = {}) {
   const size = 128;
   const c = document.createElement('canvas');
   c.width = size; c.height = size;
@@ -418,6 +418,21 @@ function createOrbSprite(colorCss, iconImage) {
   grad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fillStyle = grad; ctx.fill();
   ctx.beginPath(); ctx.arc(cx, cy, r*0.82, 0, Math.PI*2); ctx.fillStyle = 'rgba(0,0,0,0.88)'; ctx.fill();
+
+  // ★ Цветная подсветка внутри чёрного круга, под иконкой.
+  //   opts.innerGlow — hex-строка ('#ff8800'). Если не задана — нет.
+  const innerGlow = opts.innerGlow || null;
+  if (innerGlow) {
+    const innerGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r*0.82);
+    innerGrad.addColorStop(0.00, colorToRgba(innerGlow, 0.85));
+    innerGrad.addColorStop(0.55, colorToRgba(innerGlow, 0.35));
+    innerGrad.addColorStop(1.00, colorToRgba(innerGlow, 0));
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, r*0.82, 0, Math.PI*2); ctx.clip();
+    ctx.fillStyle = innerGrad; ctx.fillRect(0, 0, size, size);
+    ctx.restore();
+  }
+
   ctx.beginPath(); ctx.arc(cx, cy, r*0.82, 0, Math.PI*2); ctx.strokeStyle = colorCss; ctx.lineWidth = 8; ctx.stroke();
   if (iconImage) {
     const iconSize = r * 1.35;
@@ -536,6 +551,21 @@ export class View {
     //   с задержкой 120 мс). Явно объявлен, чтобы не полагаться на
     //   неявный undefined.
     this._abortingReveal = false;
+	
+    // ★ Зум/пан поля. zoom = 1 — «вписать в экран», больше — приближение.
+    //   camTarget — точка на плоскости стола, куда смотрит камера;
+    //   двигается пан-жестом. Ничего в игровой логике не меняет —
+    //   только двигает камеру.
+    this._zoom = 1;
+    this._zoomMin = 1;
+    this._zoomMax = 2.0;
+    this._camTarget = { x: 0, z: 0 };
+    this._vw = 0;
+    this._vh = 0;
+    this._pinch = null;
+    // ★ Не даём «фантомному» клику после pinch-жеста сработать
+    //   на канвас (браузер иногда стреляет click после мультитача).
+    this._suppressClickUntil = 0;
 
     // Слой для ghost-карт (анимации полёта карт между UI-элементами).
     this.flyLayer = document.getElementById('fly-cards-layer');
@@ -861,6 +891,26 @@ export class View {
       this.floatGroup.add(hit);
       this.clickTargets.push(hit);
     });
+	
+	    // ★ Невидимая увеличенная зона клика для исследования базы.
+    //   Появляется только в режиме explore (см. _updateHighlights),
+    //   позиционируется ровно под визуальной стадион-подсветкой базы
+    //   и позволяет игроку чуть-чуть промахнуться мимо её края — клик
+    //   всё равно засчитается как попадание в базу. Никакого влияния
+    //   на визуал и на другие режимы: пока visible=false, меш не
+    //   участвует ни в рендере, ни в raycast'ах.
+    this.exploreHitMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.2, 4.2),
+      new THREE.MeshBasicMaterial({
+        transparent: true, opacity: 0, depthWrite: false, depthTest: false,
+      })
+    );
+    this.exploreHitMesh.rotation.x = -Math.PI / 2;
+    this.exploreHitMesh.position.y = 0.05;
+    this.exploreHitMesh.renderOrder = -2;
+    this.exploreHitMesh.visible = false;
+    this.exploreHitMesh.userData = { exploreHit: true, cellId: null };
+    this.floatGroup.add(this.exploreHitMesh);
 
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
@@ -933,6 +983,14 @@ export class View {
     this.camera.fov = fov;
     this.camera.aspect = vA;
     this.camera.updateProjectionMatrix();
+	
+    // ★ Запоминаем размеры вьюпорта — нужны при pinch-пане, чтобы
+    //   пересчитывать пиксели в мировые единицы.
+    this._vw = vw;
+    this._vh = vh;
+    // ★ Пересчитываем позицию камеры с учётом текущего зума/пана.
+    //   После ресайза окна/ориентации игрок остаётся на том же зуме.
+    this._applyCameraTransform();
 
     const dimEl = document.getElementById('discard-dim-overlay');
     if (dimEl) {
@@ -954,6 +1012,34 @@ export class View {
       if (bottomLeftEl)  bottomLeftEl.style.left  = '';
       if (bottomRightEl) bottomRightEl.style.right = '';
     }
+  }
+  
+  // ★ Позиционирует камеру по текущему зуму и пану. Камера «стоит»
+  //   на вертикальной дуге над точкой this._camTarget: чем больше
+  //   zoom, тем ближе она к столу. Базовое смещение (0, 14, 9) при
+  //   zoom = 1 даёт ровно тот же вид, что и раньше.
+  _applyCameraTransform() {
+    const z = Math.max(0.0001, this._zoom);
+    const tx = this._camTarget.x;
+    const tz = this._camTarget.z;
+    const oy = 14 / z;
+    const oz = 9 / z;
+    this.camera.position.set(tx, oy, tz + oz);
+    this.camera.lookAt(tx, 0, tz);
+  }
+
+  // ★ Ограничивает пан, чтобы не уехать за пределы доски. При zoom = 1
+  //   пан запрещён (и так видно всё поле), при бо́льшем зуме разрешён
+  //   ровно настолько, чтобы дойти до края доски, и ни пикселем дальше.
+  _clampCamTarget() {
+    const z = Math.max(1, this._zoom);
+    const slack = 1 - 1 / z;                 // 0 при z=1, → 1 при z→∞
+    const maxX = (BOARD_WIDTH  / 2) * slack;
+    const maxZ = (BOARD_HEIGHT / 2) * slack;
+    if (this._camTarget.x >  maxX) this._camTarget.x =  maxX;
+    if (this._camTarget.x < -maxX) this._camTarget.x = -maxX;
+    if (this._camTarget.z >  maxZ) this._camTarget.z =  maxZ;
+    if (this._camTarget.z < -maxZ) this._camTarget.z = -maxZ;
   }
 
   _bodyRectOf(el) {
@@ -1686,6 +1772,12 @@ export class View {
     const endPos = new THREE.Vector3(basePoint.x, 0, basePoint.z);
 
     const waitDuration = opts.waitDuration ?? 0;
+    // ★ Фиксируем автора и полуход В МОМЕНТ вызова _startReviveSink
+    //   (то есть когда жетон только начал тонуть), а не когда
+    //   пузырёк фактически вылетит — иначе при смене хода между
+    //   этими событиями он уедет не в ту колонку на графике.
+    const actor = opts.actor != null ? opts.actor : this.game.currentTurn;
+    const turn  = opts.turn  != null ? opts.turn  : this.game.halfTurn;
 
     this.revivingIds.add(pieceId);
     entry.hpSprite.visible = false;
@@ -1705,6 +1797,8 @@ export class View {
       launchDeathOrb: !!opts.launchDeathOrb,
       orbsLaunched: false,
       needsEmerge: false,
+      actor,
+      turn,
     });
   }
 
@@ -1760,10 +1854,10 @@ export class View {
         task.orbsLaunched = true;
         if (task.launchExploreOrbs) {
           const enemySide = piece.side === 'white' ? 'black' : 'white';
-          this._launchExploreOrbs(task.startPos, piece.side, enemySide);
+          this._launchExploreOrbs(task.startPos, piece.side, enemySide, task.actor, task.turn);
         }
         if (task.launchDeathOrb) {
-          this._launchDeathOrb(task.startPos, piece.side);
+          this._launchDeathOrb(task.startPos, piece.side, task.actor, task.turn);
         }
       }
       const frac = Math.min(task.elapsed / task.sinkDuration, 1);
@@ -3237,6 +3331,10 @@ export class View {
     if (!game) return;
     const mode = this.ui.pendingMode;
     const selectedId = this.ui.selectedPieceId;
+	// ★ Гасим невидимую зону клика по базе; включим её ниже — но
+    //   только если mode === 'explore'. Так зона не «залипнет»
+    //   после выхода из режима исследования.
+    if (this.exploreHitMesh) this.exploreHitMesh.visible = false;
 
     let previewId = null;
     if (this.ui.selectedCardUid) {
@@ -3362,6 +3460,17 @@ export class View {
       const enemyBaseId = piece.side === 'white' ? BASE_BLACK_ID : BASE_WHITE_ID;
       const cell = getPoint(enemyBaseId);
       const off = EXPLORE_HIGHLIGHT_OFFSET[piece.side];
+
+      // ★ Включаем невидимую увеличенную зону клика ровно под
+      //   визуальным стадионом — её центр и есть центр подсветки.
+      if (this.exploreHitMesh) {
+        const outwardSign = enemyBaseId === BASE_BLACK_ID ? +1 : -1;
+        const SHIFT = 0.45;
+        this.exploreHitMesh.visible = true;
+        this.exploreHitMesh.position.x = cell.x + off.x + outwardSign * SHIFT;
+        this.exploreHitMesh.position.z = cell.z + off.z;
+        this.exploreHitMesh.userData.cellId = enemyBaseId;
+      }
 
       this.exploreTargetsGroup.add(this._createStadiumHighlightAt(cell.x + off.x, cell.z + off.z, {
         width: 1.3, height: 3.4, y: 0.10,
@@ -4783,6 +4892,113 @@ export class View {
       if (tag === 'input' || tag === 'textarea') return;
       e.preventDefault();
     });
+	
+    // ★ Pinch-to-zoom + колесо мыши.
+    this._wirePinchZoom();
+  }
+  
+  
+  // ★ Pinch-to-zoom двумя пальцами + панорамирование тем же жестом.
+  //   Плюс — колесо мыши на десктопе. Работает только на канвасе, не
+  //   мешает кликам по DOM-панелям и картам. Ничего в game не мутирует.
+  _wirePinchZoom() {
+    const el = this.renderer.domElement;
+    const active = new Map();   // identifier → {x, y}
+
+    const getDist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+    const getMid  = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+    const beginPinch = () => {
+      if (active.size < 2) { this._pinch = null; return; }
+      const [a, b] = [...active.values()];
+      const mid = getMid(a, b);
+      this._pinch = {
+        dist: getDist(a, b),
+        zoom: this._zoom,
+        targetX: this._camTarget.x,
+        targetZ: this._camTarget.z,
+        midX: mid.x,
+        midY: mid.y,
+      };
+    };
+
+    el.addEventListener('touchstart', (e) => {
+      for (const t of e.changedTouches) {
+        active.set(t.identifier, { x: t.clientX, y: t.clientY });
+      }
+      if (active.size >= 2) {
+        // ★ Гасим браузерный pinch-zoom страницы и подавляем следующий
+        //   click — иначе после жеста по полю прилетит «фантомный» тап.
+        this._suppressClickUntil = performance.now() + 400;
+        e.preventDefault();
+        beginPinch();
+      }
+    }, { passive: false });
+
+    el.addEventListener('touchmove', (e) => {
+      for (const t of e.changedTouches) {
+        if (active.has(t.identifier)) {
+          active.set(t.identifier, { x: t.clientX, y: t.clientY });
+        }
+      }
+      if (active.size < 2) return;
+      e.preventDefault();
+      if (!this._pinch) { beginPinch(); return; }
+
+      const [a, b] = [...active.values()];
+      const newDist = getDist(a, b);
+      const newMid  = getMid(a, b);
+      if (this._pinch.dist <= 1) return;
+
+      // ★ Масштаб
+      const factor = newDist / this._pinch.dist;
+      let newZoom = this._pinch.zoom * factor;
+      newZoom = Math.max(this._zoomMin, Math.min(this._zoomMax, newZoom));
+      this._zoom = newZoom;
+
+      // ★ Пан: смещение мидпоинта в пикселях → сдвиг цели камеры в
+      //   мировых единицах. Конверсия — грубая, но стабильная:
+      //   при zoom = 1 доска занимает около 90 % вьюпорта по ширине
+      //   и около 45 % по высоте.
+      const vw = this._vw || window.innerWidth;
+      const vh = this._vh || window.innerHeight;
+      const z = Math.max(0.0001, this._zoom);
+      const pxToWorldX = (BOARD_WIDTH  * 1.1) / (vw * z);
+      const pxToWorldZ = (BOARD_HEIGHT * 2.2) / (vh * z);
+      const dx = newMid.x - this._pinch.midX;
+      const dy = newMid.y - this._pinch.midY;
+
+      this._camTarget.x = this._pinch.targetX - dx * pxToWorldX;
+      this._camTarget.z = this._pinch.targetZ - dy * pxToWorldZ;
+
+      this._clampCamTarget();
+      this._applyCameraTransform();
+    }, { passive: false });
+
+    const endTouch = (e) => {
+      for (const t of e.changedTouches) active.delete(t.identifier);
+      if (active.size < 2) this._pinch = null;
+      else beginPinch();
+    };
+    el.addEventListener('touchend', endTouch);
+    el.addEventListener('touchcancel', endTouch);
+
+    // ★ Колесо мыши — бонус для десктопа, не мешает мобильной логике.
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      let newZoom = this._zoom * factor;
+      newZoom = Math.max(this._zoomMin, Math.min(this._zoomMax, newZoom));
+      if (newZoom === this._zoom) return;
+      this._zoom = newZoom;
+      if (this._zoom <= 1.0001) {
+        // Полный откат — вернуть камеру в центр поля.
+        this._camTarget.x = 0;
+        this._camTarget.z = 0;
+      }
+      this._clampCamTarget();
+      this._applyCameraTransform();
+    }, { passive: false });
   }
 
   _tryEnterFullscreen() {
@@ -4871,6 +5087,9 @@ export class View {
   _onCanvasClick(e) {
     const game = this.game;
     if (!game || game.gameOver || this.animating) return;
+	    // ★ Не реагируем на click, прилетевший сразу после pinch-жеста:
+    //   некоторые браузеры шлют «фантомный» клик по центру жеста.
+    if (performance.now() < this._suppressClickUntil) return;
     if (this.ui.discardMode || this.ui.discardLocked) return;
     if (game.revealState.active) return;
 
@@ -4924,6 +5143,20 @@ export class View {
     if (pHits.length > 0 && pHits[0].object.userData.pieceId) {
       this._onPieceClick(pHits[0].object.userData.pieceId);
       return;
+    }
+
+    // ★ Расширенная зона клика по базе в режиме исследования.
+    //   Проверяется ПОСЛЕ жетонов — клик по своему же жетону сначала
+    //   должен обрабатываться как клик по жетону (например, чтобы
+    //   отменить выбор), а не как подтверждение исследования. Но
+    //   ДО обычных клеток — именно чтобы «промах» рядом с базой
+    //   засчитался как попадание в базу.
+    if (this.exploreHitMesh && this.exploreHitMesh.visible) {
+      const eHits = this.raycaster.intersectObject(this.exploreHitMesh, false);
+      if (eHits.length > 0 && this.exploreHitMesh.userData.cellId != null) {
+        this._onCellClick(this.exploreHitMesh.userData.cellId);
+        return;
+      }
     }
 
     const cHits = this.raycaster.intersectObjects(this.clickTargets, false);
@@ -5068,7 +5301,11 @@ export class View {
             && this.animating.targetId === ev.pieceId) {
           this._pendingDeathAfterAttack = ev.pieceId;
         } else {
-          this._startReviveSink(ev.pieceId, { launchDeathOrb: true });
+          this._startReviveSink(ev.pieceId, {
+            launchDeathOrb: true,
+            actor: this.game.currentTurn,
+            turn: this.game.halfTurn,
+          });
         }
         break;
 
@@ -5088,7 +5325,12 @@ export class View {
       case 'mightChanged':         break;
       case 'powerOrbsFromCenter':  this._animateOrbsFromCenter(ev); break;
       case 'exploreResolved':
-        this._startReviveSink(ev.pieceId, { waitDuration: 0.45, launchExploreOrbs: true });
+        this._startReviveSink(ev.pieceId, {
+          waitDuration: 0.45,
+          launchExploreOrbs: true,
+          actor: this.game.currentTurn,
+          turn: this.game.halfTurn,
+        });
         break;
       case 'turnChanged':          this._onTurnChanged(ev); break;
       case 'deckReshuffled':       this._animateDeckReshuffle(ev.side); break;
@@ -5201,7 +5443,11 @@ export class View {
 
         if (this._pendingDeathAfterAttack === ev.targetId) {
           this._pendingDeathAfterAttack = null;
-          this._startReviveSink(ev.targetId, { launchDeathOrb: true });
+          this._startReviveSink(ev.targetId, {
+            launchDeathOrb: true,
+            actor: this.game.currentTurn,
+            turn: this.game.halfTurn,
+          });
           this._pendingDeathOrbFromAttack = null;
         } else if (this._pendingDeathOrbFromAttack) {
           this._animateDeathOrb(this._pendingDeathOrbFromAttack);
@@ -5237,9 +5483,17 @@ export class View {
     target.y = 0.5;
     const center = getPoint(4);
     const colorCss = ev.side === 'white' ? '#ef1f1f' : '#ffc300';
+    // ★ actor/turn приходят прямо из события — они зафиксированы в
+    //   game.js в момент _applyLocation3Damage, то есть ДО _doFinish-
+    //   EndTurn, который инкрементит halfTurn. Раньше здесь читался
+    //   this.game.halfTurn уже после инкремента, и пузырьки центра
+    //   попадали в колонку следующего раунда. Fallback — на случай
+    //   событий из старого снапшота, где этих полей ещё нет.
+    const actor = ev.actor != null ? ev.actor : ev.side;
+    const turn = ev.turn != null ? ev.turn : this.game.halfTurn;
 
     for (let i = 0; i < ev.count; i++) {
-      const sprite = createOrbSprite(colorCss, MID_ICON_IMG);
+      const sprite = createOrbSprite(colorCss, MID_ICON_IMG, { innerGlow: '#3a8fff' });
       const angle = (i / Math.max(1, ev.count)) * Math.PI * 2;
       sprite.position.set(center.x + Math.cos(angle) * 0.35, 0.55, center.z + Math.sin(angle) * 0.35);
       this.floatGroup.add(sprite);
@@ -5248,18 +5502,24 @@ export class View {
         elapsed: 0, delay: i * 0.14, duration: 1.1,
         affectedSide: enemySide,
         kind: 'location3',
+        actor,
+        turn,
       });
     }
   }
 
-  _launchExploreOrbs(fromPos, side, enemySide) {
+  _launchExploreOrbs(fromPos, side, enemySide, actor, turn) {
     const enemyEntry = this.captainMeshes[enemySide];
     if (!enemyEntry) return;
     const target = enemyEntry.mesh.position.clone(); target.y = 0.5;
     const start = new THREE.Vector3(fromPos.x, 0.55, fromPos.z);
     const colorCss = enemySide === 'white' ? '#ef1f1f' : '#ffc300';
+    // ★ actor/turn приходят из revive-таска, где были зафиксированы
+    //   в момент старта анимации. Fallback — если не заданы.
+    const actorFixed = actor != null ? actor : side;
+    const turnFixed  = turn  != null ? turn  : this.game.halfTurn;
     for (let i = 0; i < 3; i++) {
-      const sprite = createOrbSprite(colorCss, EXPLORE_ICON_IMG);
+      const sprite = createOrbSprite(colorCss, EXPLORE_ICON_IMG, { innerGlow: '#ff2ec4' });
       const angle = (i / 3) * Math.PI * 2;
       sprite.position.set(start.x + Math.cos(angle) * 0.35, start.y, start.z + Math.sin(angle) * 0.35);
       this.floatGroup.add(sprite);
@@ -5268,6 +5528,8 @@ export class View {
         elapsed: 0, delay: i * 0.14, duration: 1.1,
         affectedSide: enemySide,
         kind: 'explore',
+        actor: actorFixed,
+        turn: turnFixed,
       });
     }
   }
@@ -5275,22 +5537,33 @@ export class View {
   _animateDeathOrb(ev) {
     const pieceEntry = this.pieceMeshes.get(ev.pieceId);
     if (!pieceEntry) return;
-    this._launchDeathOrb(pieceEntry.mesh.position.clone(), ev.side);
+    // ★ actor — тот, чей сейчас ход (тот, кто «выбил» могущество).
+    //   turn — номер ПОЛУхода (halfTurn), а не раунда.
+    this._launchDeathOrb(
+      pieceEntry.mesh.position.clone(),
+      ev.side,
+      this.game.currentTurn,
+      this.game.halfTurn
+    );
   }
 
-  _launchDeathOrb(fromPos, side) {
+  _launchDeathOrb(fromPos, side, actor, turn) {
     const tokenEntry = this.captainMeshes[side];
     if (!tokenEntry) return;
     const target = tokenEntry.mesh.position.clone(); target.y = 0.5;
     const start = new THREE.Vector3(fromPos.x, 0.55, fromPos.z);
     const colorCss = side === 'white' ? '#ffc300' : '#ef1f1f';
-    const sprite = createOrbSprite(colorCss, DEATH_ICON_IMG);
+    const sprite = createOrbSprite(colorCss, DEATH_ICON_IMG, { innerGlow: '#ff8800' });
     sprite.position.copy(start);
     this.floatGroup.add(sprite);
     this.powerOrbs.push({
       sprite, target, start, elapsed: 0, delay: 0, duration: 1.1,
       affectedSide: side,
       kind: 'death',
+      // ★ Fallback, если actor/turn не были переданы явно
+      //   (например, из старого revive-таска без полей).
+      actor: actor != null ? actor : this.game.currentTurn,
+      turn:  turn  != null ? turn  : this.game.halfTurn,
     });
   }
 
@@ -5314,10 +5587,12 @@ export class View {
         o.sprite.material.dispose();
         this.powerOrbs.splice(i, 1);
 
-        // ★ Вот здесь — и только здесь — уменьшается могущество.
-        //   game.might меняется ровно в момент прилёта пузырька.
         if (this.net) continue;
-        const res = this.game.applyMightChange(o.affectedSide, -1);
+        // o.kind — 'location3' | 'explore' | 'death';
+        // o.actor и o.turn зафиксированы в момент выпуска пузырька.
+        const res = this.game.applyMightChange(
+          o.affectedSide, -1, o.kind, o.actor, o.turn
+        );
         if (res && res.events) {
           for (const ev of res.events) {
             try { this.playEvent(ev); } catch (err) { console.error('playEvent error:', ev && ev.kind, err); }
@@ -5434,6 +5709,19 @@ export class View {
     this.refs.discardDim.classList.remove('visible');
     this._clearRevealCards();
 
+    // ★ До того как стереть пузырьки, которые ещё в полёте, применяем
+    //   их эффекты в game. Иначе последние 1–2 пузырька не попадут
+    //   в history — и в «Хронике могущества» не будет отражено, что
+    //   могущество упало.
+    if (!this.net) {
+      for (const o of this.powerOrbs) {
+        try {
+          this.game.applyMightChange(o.affectedSide, -1, o.kind, o.actor, o.turn);
+        } catch (e) {
+          console.error('applyMightChange on victory failed:', e);
+        }
+      }
+    }
     for (const o of this.powerOrbs) {
       if (o.sprite.parent) o.sprite.parent.remove(o.sprite);
       if (o.sprite.material.map) o.sprite.material.map.dispose();
@@ -5473,9 +5761,238 @@ export class View {
       });
     }
 
+    // ★ Рисуем график до показа оверлея — чтобы он уже был готов.
+    this._drawVictoryGraph();
+
     setTimeout(() => {
       overlay.classList.remove('hidden');
     }, 850);
+  }
+
+  // ★ «Хроника могущества» в панели победы.
+  //   Горизонтальная ось, на ней — колонки по ходам.
+  //   Над осью — пузырьки, которые ходящий «выбил» из оппонента.
+  //   Под осью — пузырьки, которые ходящий потерял сам
+  //   (например, убил свою же фигуру).
+  //   В одной стопке не больше 3 пузырьков; при переполнении —
+  //   следующий столбик сбоку, на той же высоте.
+  //   Пузырёк рисуется как в игре: тёмный фон, цветное кольцо
+  //   (цвет команды, потерявшей могущество), иконка причины внутри.
+  _drawVictoryGraph() {
+    const canvas = document.getElementById('victory-graph');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    const history = this.game.history || [];
+
+    // ★ Колонка графика = один РАУНД (ход белых + ход чёрных), а не
+    //   полуход. Внутри колонки сверху — пузырьки за действия белых,
+    //   снизу — за действия чёрных, и на колонку одна подпись «Ход N».
+    //   Раньше белые и чёрные одного раунда получали две отдельные
+    //   колонки с одинаковой подписью, что выглядело как дублирование.
+    //
+    //   Группируем по ACTOR (кто «заработал» пузырёк), а не по жертве:
+    //   friendly fire (свой убил своего) должен остаться в колонке
+    //   актора, а не жертвы.
+    const byRound = new Map();
+    history.forEach(h => {
+      const round = Math.ceil((h.turn || 1) / 2);
+      if (!byRound.has(round)) byRound.set(round, { white: [], black: [] });
+      const bucket = byRound.get(round);
+      const actor = h.actor || h.side;
+      if (actor === 'white') bucket.white.push(h);
+      else bucket.black.push(h);
+    });
+
+    const totalRounds = byRound.size > 0
+      ? Math.max(...byRound.keys())
+      : 1;
+
+    const padL = 30, padR = 30;
+    const axisY = H / 2;
+    const plotW = W - padL - padR;
+    const colW = plotW / totalRounds;
+    // 0.22 вместо 0.30 — колонка теперь вдвое «шире» (в ней живут две
+    // команды), и пузырьки того же размера уже не слипаются.
+    const bubbleR = Math.max(10, Math.min(18, colW * 0.22));
+    const bubbleGap = 6;
+    const stackSize = 3;
+    const groupOffsetX = bubbleR * 2 + 8;
+
+    // Фон
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Разделители колонок
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    for (let r = 0; r <= totalRounds; r++) {
+      const x = padL + r * colW;
+      ctx.beginPath();
+      ctx.moveTo(x, 16);
+      ctx.lineTo(x, H - 16);
+      ctx.stroke();
+    }
+
+    // Горизонтальная ось
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(padL, axisY);
+    ctx.lineTo(W - padR, axisY);
+    ctx.stroke();
+
+    // Подписи по краям
+    ctx.font = '11px monospace';
+    ctx.fillStyle = 'rgba(200,200,220,0.55)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('▲ действия белых', padL + 6, 22);
+    ctx.fillText('▼ действия чёрных', padL + 6, H - 20);
+
+    // Колонки — по одной на раунд
+    for (let r = 1; r <= totalRounds; r++) {
+      const cx = padL + (r - 0.5) * colW;
+
+      // ★ Одна подпись на раунд, цвет — нейтральный светло-серый.
+      //   Раньше подпись красилась в цвет одной из команд, но теперь
+      //   в колонке могут быть пузырьки обеих, и красить её в цвет
+      //   одной из них некорректно. Обводка чёрным — чтобы читалась
+      //   поверх линии оси.
+      const label = 'Ход ' + r;
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(0,0,0,0.95)';
+      ctx.strokeText(label, cx, axisY);
+      ctx.fillStyle = 'rgba(220,220,235,0.92)';
+      ctx.fillText(label, cx, axisY);
+
+      const bucket = byRound.get(r) || { white: [], black: [] };
+      // direction = -1 — вверх от оси, +1 — вниз.
+      this._drawBubbleStack(ctx, cx, axisY, bubbleR, bubbleGap, stackSize, groupOffsetX, bucket.white, -1);
+      this._drawBubbleStack(ctx, cx, axisY, bubbleR, bubbleGap, stackSize, groupOffsetX, bucket.black, +1);
+    }
+
+    // ★ Легенда причин внизу — по центру.
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const legendItems = [
+      { icon: DEATH_ICON_IMG,   label: 'смерть' },
+      { icon: MID_ICON_IMG,     label: 'центр' },
+      { icon: EXPLORE_ICON_IMG, label: 'база' },
+    ];
+    const itemWidths = legendItems.map(it =>
+      26 + ctx.measureText(it.label).width + 16
+    );
+    const totalLegendW = itemWidths.reduce((a, b) => a + b, 0) - 16;
+    let legendX = (W - totalLegendW) / 2;
+    const legendY = H - 10;
+    legendItems.forEach((it, i) => {
+      if (it.icon) ctx.drawImage(it.icon, legendX, legendY - 7, 14, 14);
+      ctx.fillStyle = 'rgba(220,220,235,0.85)';
+      ctx.fillText(it.label, legendX + 20, legendY);
+      legendX += itemWidths[i];
+    });
+  }
+  
+    // ★ Рисует «стопку» пузырьков одной команды над (direction=-1) или
+  //   под (direction=+1) осью. Группы по stackSize пузырьков центри-
+  //   руются относительно центра колонки — раньше каждая следующая
+  //   группа съезжала вправо на фиксированный offset, и пара групп
+  //   выглядела криво.
+  _drawBubbleStack(ctx, cx, axisY, bubbleR, bubbleGap, stackSize, groupOffsetX, events, direction) {
+    if (!events || events.length === 0) return;
+    const numGroups = Math.ceil(events.length / stackSize);
+    const totalWidth = (numGroups - 1) * groupOffsetX;
+    const startX = cx - totalWidth / 2;
+
+    events.forEach((h, i) => {
+      const group = Math.floor(i / stackSize);
+      const inGroup = i % stackSize;
+      const x = startX + group * groupOffsetX;
+      const y = axisY + direction * (34 + bubbleR + inGroup * (bubbleR * 2 + bubbleGap));
+      this._drawGraphBubble(ctx, x, y, bubbleR, h);
+    });
+  }
+
+  _drawGraphBubble(ctx, cx, cy, r, h) {
+    // ★ Цвет кольца — это цвет того, кому падение могущества ВЫГОДНО
+    //   (противник жертвы), а не того, кто потерял. Так пузырёк
+    //   читается как «очко в пользу этой команды».
+    //   friendly fire (h.side === h.actor): жертва = актор, цвет
+    //   получается ровно оппонента — это и требовалось.
+    //   h.side === 'white' → белые потеряли → выгода чёрным (жёлтый).
+    //   h.side === 'black' → чёрные потеряли → выгода белым (красный).
+    const ringColor = h.side === 'black' ? '#ef1f1f' : '#ffc300';
+    const iconFor = (kind) => {
+      if (kind === 'death')     return DEATH_ICON_IMG;
+      if (kind === 'location3') return MID_ICON_IMG;
+      if (kind === 'explore')   return EXPLORE_ICON_IMG;
+      return null;
+    };
+    const glowFor = (kind) => {
+      if (kind === 'death')     return '#ff8800';
+      if (kind === 'location3') return '#3a8fff';
+      if (kind === 'explore')   return '#ff2ec4';
+      return null;
+    };
+    const icon = iconFor(h.reason);
+    const glowColor = glowFor(h.reason);
+
+    // Мягкое свечение вокруг пузырька — цветом команды-жертвы.
+    const glow = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 1.9);
+    glow.addColorStop(0, colorToRgba(ringColor, 0.55));
+    glow.addColorStop(1, colorToRgba(ringColor, 0));
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 1.9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Тёмный фон пузырька.
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(10,10,20,0.95)';
+    ctx.fill();
+
+    // ★ Внутреннее свечение — цвет по причине, как в игровых пузырьках.
+    if (glowColor) {
+      const innerGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.95);
+      innerGrad.addColorStop(0.00, colorToRgba(glowColor, 0.80));
+      innerGrad.addColorStop(0.55, colorToRgba(glowColor, 0.30));
+      innerGrad.addColorStop(1.00, colorToRgba(glowColor, 0));
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.95, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = innerGrad;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      ctx.restore();
+    }
+
+    // Иконка причины поверх свечения.
+    if (icon) {
+      const iconSize = r * 1.35;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.95, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(icon, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+      ctx.restore();
+    }
+
+    // Кольцо цвета команды.
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = ringColor;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
   }
 
   _createHalfCircleTexture(sourceCanvas, side) {
