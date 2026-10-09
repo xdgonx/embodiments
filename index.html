@@ -1868,6 +1868,57 @@
     }
     .fly-card.white-card { border-color: #ef1f1f; }
     .fly-card.black-card { border-color: #ffc300; }
+	    /* ★ Победа на телефоне. Без этих правил панель с графиком
+       раздувается: canvas #victory-graph был width: 100% — на узком
+       экране 1000×480 превращался в 1000×~1000 и вылезал за вьюпорт
+       сверху и снизу. Заголовок «Победа» и кнопка «Заново» уезжали
+       за край. Теперь ограничиваем и панель, и сам график по высоте. */
+    @media (max-width: 1200px), (pointer: coarse) {
+      .victory-panel {
+        padding: 12px 14px 14px;
+        min-width: 0;
+        max-width: 96vw;
+        max-height: 94vh;
+        overflow-y: auto;
+        box-sizing: border-box;
+      }
+      .victory-title {
+        font-size: 16px;
+        letter-spacing: 1px;
+        margin-bottom: 2px;
+      }
+      .victory-sub {
+        font-size: 10px;
+        margin-bottom: 8px;
+      }
+      .victory-graph-wrap {
+        max-width: 92vw;
+        /* Ограничиваем высоту обёртки, чтобы canvas гарантированно
+           вписался: 100% − заголовок − подпись − кнопка. */
+        max-height: 46vh;
+        padding: 6px 8px 8px;
+        margin: 6px auto 10px;
+      }
+      .victory-graph-title {
+        font-size: 9px;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+      }
+      #victory-graph {
+        /* ★ Ключевое: меняем логику с «растянуть по ширине» на
+           «вписать в габарит». Ширина автоматическая, ограничена
+           сверху max-height, пропорции 1000×480 сохраняются. */
+        width: auto;
+        height: auto;
+        max-width: 100%;
+        max-height: 38vh;
+        margin: 0 auto;
+      }
+      #victory-restart {
+        padding: 8px 20px;
+        font-size: 12px;
+      }
+    }
   </style>
 </head>
 <body>
