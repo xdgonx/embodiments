@@ -597,6 +597,13 @@ export class Game {
         reason,
         delta: after - before,
         mightAfter: after,
+        // ★ Этот пузырёк — тот самый, что довёл могущество жертвы
+        //   до 0? Только тот, при котором ДО было > 0, а ПОСЛЕ — 0.
+        //   Последующие clampedAtZero-записи («сверх-урон» по уже
+        //   обнулённому могуществу) убийственными не считаются:
+        //   иначе на графике сразу несколько пузырьков подряд
+        //   рисовались бы крупными.
+        isKiller: (before > 0 && after === 0),
         whiteMight: this.might.white,
         blackMight: this.might.black,
       });

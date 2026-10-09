@@ -31,6 +31,22 @@ const LOCATION_BONUS_POSITIONS = {
 };
 const LOCATION_ORDINALS = { 1:'первой', 2:'второй', 4:'четвёртой', 5:'пятой' };
 
+// ★ Цвет кольца «убийственного» пузырька могущества — того, который
+//   довёл могущество жертвы до 0. Меняется в одном месте; см. также
+//   функцию getKillerRingColor ниже. Обычные пузырьки используют
+//   свой цвет по команде-жертве, он задан в _launch*Orbs.
+const KILLER_RING_COLOR = {
+  white: '#000000',  // обнулил могущество БЕЛОЙ команды → чёрное кольцо
+  black: '#ffffff',  // обнулил могущество ЧЁРНОЙ команды → белое кольцо
+};
+
+// ★ Возвращает цвет кольца для пузырька с заданной стороной-жертвой.
+//   side — сторона, чьё могущество упало ('white' | 'black').
+//   isKiller — довёл ли этот пузырёк могущество до 0.
+//   baseRingCss — «обычный» цвет для этой стороны, если пузырёк не убийца.
+function getKillerRingColor(side, isKiller, baseRingCss) {
+  return isKiller ? KILLER_RING_COLOR[side] : baseRingCss;
+}
 const MIRROR_BADGE_CROP = { yTop: 0.15, sideFrac: 1.0 };
 const MIRROR_BADGE_SIZE = 0.60;
 const MIRROR_BADGE_OFFSET_Z = 0.6;
@@ -566,6 +582,14 @@ export class View {
     // ★ Не даём «фантомному» клику после pinch-жеста сработать
     //   на канвас (браузер иногда стреляет click после мультитача).
     this._suppressClickUntil = 0;
+	
+    // ★ Сколько пузырьков прямо сейчас в полёте к капитану каждой
+    //   стороны. Нужно, чтобы при создании нового пузырька предсказать,
+    //   окажется ли он убийственным. Пузырьки летят строго
+    //   последовательно (прилетел → might−1 → следующий), поэтому
+    //   предсказание точное. При прилёте счётчик уменьшается
+    //   (см. _updatePowerOrbs).
+    this._pendingMightLoss = { white: 0, black: 0 };
 
     // Слой для ghost-карт (анимации полёта карт между UI-элементами).
     this.flyLayer = document.getElementById('fly-cards-layer');
@@ -1574,7 +1598,15 @@ export class View {
     for (const piece of game.pieces) {
       if (this.pieceMeshes.has(piece.id)) continue;
       const teamColorHex = piece.side === 'white' ? COLOR_RED : COLOR_YELLOW;
-      const outlineHex = piece.profile.outlineHex ?? (piece.side === 'white' ? 0xffffff : 0x0a0a0a);
+      // ★ Обводка определяется ТОЛЬКО стороной, а не профилем персонажа.
+      //   Раньше здесь стоял piece.profile.outlineHex, а в PROFILES он
+      //   прописан жёстко за каждым персонажем (Джек всегда белый,
+      //   Уруст всегда чёрный и т.д.). Из-за этого при перемешивании
+      //   команд (shuffleTeams или ?teams=...) обводка не совпадала
+      //   с текущей стороной жетона. Капитаны не были затронуты, потому
+      //   что в _renderCaptains цвет уже считался от side — теперь оба
+      //   места работают одинаково.
+      const outlineHex = piece.side === 'white' ? 0xffffff : 0x0a0a0a;
       const tex = this._getPieceTexture(piece.profileKey, piece.side, 'regular');
       const mesh = createPieceMesh(teamColorHex, outlineHex, tex);
       mesh.userData.pieceId = piece.id;
@@ -5521,8 +5553,21 @@ export class View {
     const actor = ev.actor != null ? ev.actor : ev.side;
     const turn = ev.turn != null ? ev.turn : this.game.halfTurn;
 
-    for (let i = 0; i < ev.count; i++) {
-      const sprite = createOrbSprite(colorCss, MID_ICON_IMG, { innerGlow: '#3a8fff' });
+        for (let i = 0; i < ev.count; i++) {
+      // ★ Из 1–2 пузырьков жертву убьёт только тот, что по счёту
+      //   совпадает с остатком могущества (см. комментарий в
+      //   _launchExploreOrbs).
+      const remaining = this.game.might[enemySide] - this._pendingMightLoss[enemySide];
+      const isKiller = remaining === 1;
+      this._pendingMightLoss[enemySide]++;
+
+      // ★ Убийственный пузырёк — с белым/чёрным кольцом по цвету
+      //   команды, чьё могущество он обнуляет.
+      // ★ Обнулил могущество БЕЛОЙ команды — чёрное кольцо,
+      //   ЧЁРНОЙ — белое.
+      const ringCss = getKillerRingColor(enemySide, isKiller, colorCss);
+
+      const sprite = createOrbSprite(ringCss, MID_ICON_IMG, { innerGlow: '#3a8fff' });
       const angle = (i / Math.max(1, ev.count)) * Math.PI * 2;
       sprite.position.set(center.x + Math.cos(angle) * 0.35, 0.55, center.z + Math.sin(angle) * 0.35);
       this.floatGroup.add(sprite);
@@ -5533,6 +5578,7 @@ export class View {
         kind: 'location3',
         actor,
         turn,
+        isKiller,
       });
     }
   }
@@ -5545,10 +5591,23 @@ export class View {
     const colorCss = enemySide === 'white' ? '#ef1f1f' : '#ffc300';
     // ★ actor/turn приходят из revive-таска, где были зафиксированы
     //   в момент старта анимации. Fallback — если не заданы.
-    const actorFixed = actor != null ? actor : side;
+        const actorFixed = actor != null ? actor : side;
     const turnFixed  = turn  != null ? turn  : this.game.halfTurn;
     for (let i = 0; i < 3; i++) {
-      const sprite = createOrbSprite(colorCss, EXPLORE_ICON_IMG, { innerGlow: '#ff2ec4' });
+      // ★ Из трёх пузырьков жертву убьёт только тот, что по счёту
+      //   совпадает с остатком могущества. Например, при might = 3
+      //   убийственный — третий (i=2). При might = 1 — первый (i=0).
+      const remaining = this.game.might[enemySide] - this._pendingMightLoss[enemySide];
+      const isKiller = remaining === 1;
+      this._pendingMightLoss[enemySide]++;
+
+      // ★ Убийственный пузырёк — с белым/чёрным кольцом по цвету
+      //   команды, чьё могущество он обнуляет.
+      // ★ Обнулил могущество БЕЛОЙ команды — чёрное кольцо,
+      //   ЧЁРНОЙ — белое.
+      const ringCss = getKillerRingColor(enemySide, isKiller, colorCss);
+
+      const sprite = createOrbSprite(ringCss, EXPLORE_ICON_IMG, { innerGlow: '#ff2ec4' });
       const angle = (i / 3) * Math.PI * 2;
       sprite.position.set(start.x + Math.cos(angle) * 0.35, start.y, start.z + Math.sin(angle) * 0.35);
       this.floatGroup.add(sprite);
@@ -5559,6 +5618,7 @@ export class View {
         kind: 'explore',
         actor: actorFixed,
         turn: turnFixed,
+        isKiller,
       });
     }
   }
@@ -5581,18 +5641,26 @@ export class View {
     if (!tokenEntry) return;
     const target = tokenEntry.mesh.position.clone(); target.y = 0.5;
     const start = new THREE.Vector3(fromPos.x, 0.55, fromPos.z);
-    const colorCss = side === 'white' ? '#ffc300' : '#ef1f1f';
-    const sprite = createOrbSprite(colorCss, DEATH_ICON_IMG, { innerGlow: '#ff8800' });
+        // ★ Убийственный пузырёк отличаем ЦВЕТОМ кольца, а не размером:
+    //   у него кольцо белое (если урон получила белая команда) или
+    //   чёрное (если чёрная). Цвет остальных пузырьков — как раньше.
+    const remaining = this.game.might[side] - this._pendingMightLoss[side];
+    const isKiller = remaining === 1;
+    this._pendingMightLoss[side]++;
+
+    const baseRingCss = side === 'white' ? '#ffc300' : '#ef1f1f';
+    const ringCss = getKillerRingColor(side, isKiller, baseRingCss);
+
+    const sprite = createOrbSprite(ringCss, DEATH_ICON_IMG, { innerGlow: '#ff8800' });
     sprite.position.copy(start);
     this.floatGroup.add(sprite);
     this.powerOrbs.push({
       sprite, target, start, elapsed: 0, delay: 0, duration: 1.1,
       affectedSide: side,
       kind: 'death',
-      // ★ Fallback, если actor/turn не были переданы явно
-      //   (например, из старого revive-таска без полей).
       actor: actor != null ? actor : this.game.currentTurn,
       turn:  turn  != null ? turn  : this.game.halfTurn,
+      isKiller,
     });
   }
 
@@ -5607,6 +5675,8 @@ export class View {
       const z = o.start.z + (o.target.z - o.start.z) * eased;
       const y = o.start.y + (o.target.y - o.start.y) * eased + Math.sin(frac * Math.PI) * 0.55;
       o.sprite.position.set(x, y, z);
+      // ★ Размер у всех пузырьков одинаковый — убийственный отличается
+      //   только цветом кольца (см. _launch*Orbs / _drawGraphBubble).
       const s = 0.75 + Math.sin(frac * Math.PI * 6) * 0.08;
       o.sprite.scale.set(s, s, 1);
 
@@ -5615,6 +5685,13 @@ export class View {
         if (o.sprite.material.map) o.sprite.material.map.dispose();
         o.sprite.material.dispose();
         this.powerOrbs.splice(i, 1);
+
+        // ★ Пузырёк прилетел — уменьшаем счётчик «в полёте» для его
+        //   жертвы. Делаем это ДО `if (this.net) continue`, иначе
+        //   в мультиплеере счётчик не сбрасывался бы.
+        if (o.affectedSide && this._pendingMightLoss[o.affectedSide] > 0) {
+          this._pendingMightLoss[o.affectedSide]--;
+        }
 
         if (this.net) continue;
         // o.kind — 'location3' | 'explore' | 'death';
@@ -5952,14 +6029,14 @@ export class View {
   }
 
   _drawGraphBubble(ctx, cx, cy, r, h) {
-    // ★ Цвет кольца — это цвет того, кому падение могущества ВЫГОДНО
-    //   (противник жертвы), а не того, кто потерял. Так пузырёк
-    //   читается как «очко в пользу этой команды».
-    //   friendly fire (h.side === h.actor): жертва = актор, цвет
-    //   получается ровно оппонента — это и требовалось.
+    // ★ Цвет свечения — «кому выгодно»: противник жертвы.
     //   h.side === 'white' → белые потеряли → выгода чёрным (жёлтый).
     //   h.side === 'black' → чёрные потеряли → выгода белым (красный).
-    const ringColor = h.side === 'black' ? '#ef1f1f' : '#ffc300';
+    const winColor = h.side === 'black' ? '#ef1f1f' : '#ffc300';
+
+    // ★ Цвет кольца — общий помощник. Для убийственного пузырька
+    //   он даёт цвет из KILLER_RING_COLOR, для остальных — winColor.
+    const ringColor = getKillerRingColor(h.side, h.isKiller, winColor);
     const iconFor = (kind) => {
       if (kind === 'death')     return DEATH_ICON_IMG;
       if (kind === 'location3') return MID_ICON_IMG;
@@ -5977,8 +6054,10 @@ export class View {
 
     // Мягкое свечение вокруг пузырька — цветом команды-жертвы.
     const glow = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 1.9);
-    glow.addColorStop(0, colorToRgba(ringColor, 0.55));
-    glow.addColorStop(1, colorToRgba(ringColor, 0));
+    // ★ Свечение всегда «победного» цвета, даже если кольцо чёрное —
+    //   иначе чёрное свечение сольётся с тёмным фоном.
+    glow.addColorStop(0, colorToRgba(winColor, 0.55));
+    glow.addColorStop(1, colorToRgba(winColor, 0));
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(cx, cy, r * 1.9, 0, Math.PI * 2);
