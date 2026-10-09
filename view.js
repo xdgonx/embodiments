@@ -425,17 +425,39 @@ function createTokenTexture(img, outlineCss) {
 
 function createOrbSprite(colorCss, iconImage, opts = {}) {
   const size = 128;
+  // ★ opts.shape: 'circle' (по умолчанию) или 'square'. Квадрат —
+  //   для убийственного пузырька, чтобы игрок сразу видел, какой
+  //   именно удар стал решающим. Квадрат рисуется со скруглением,
+  //   чтобы читался как «пузырёк-квадрат», а не как UI-панель.
+  const shape = opts.shape === 'square' ? 'square' : 'circle';
   const c = document.createElement('canvas');
   c.width = size; c.height = size;
   const ctx = c.getContext('2d');
   const cx = size/2, cy = size/2, r = size/2 - 8;
+
+  // ★ Хелпер: рисует контур пузырька нужной формы с «радиусом» rad
+  //   (для квадрата rad — это полусторона, т.е. расстояние от центра
+  //   до середины каждой стороны).
+  const shapePath = (rad) => {
+    ctx.beginPath();
+    if (shape === 'square') {
+      const rr = rad * 0.30;
+      roundRectPath(ctx, cx - rad, cy - rad, rad * 2, rad * 2, rr);
+    } else {
+      ctx.arc(cx, cy, rad, 0, Math.PI*2);
+    }
+  };
+
+  // Внешнее мягкое свечение.
   const grad = ctx.createRadialGradient(cx, cy, r*0.5, cx, cy, r);
   grad.addColorStop(0, 'rgba(255,255,255,0.65)');
   grad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fillStyle = grad; ctx.fill();
-  ctx.beginPath(); ctx.arc(cx, cy, r*0.82, 0, Math.PI*2); ctx.fillStyle = 'rgba(0,0,0,0.88)'; ctx.fill();
+  ctx.save(); shapePath(r); ctx.fillStyle = grad; ctx.fill(); ctx.restore();
 
-  // ★ Цветная подсветка внутри чёрного круга, под иконкой.
+  // Тёмная заливка.
+  ctx.save(); shapePath(r*0.82); ctx.fillStyle = 'rgba(0,0,0,0.88)'; ctx.fill(); ctx.restore();
+
+  // ★ Цветная подсветка внутри, под иконкой.
   //   opts.innerGlow — hex-строка ('#ff8800'). Если не задана — нет.
   const innerGlow = opts.innerGlow || null;
   if (innerGlow) {
@@ -444,12 +466,19 @@ function createOrbSprite(colorCss, iconImage, opts = {}) {
     innerGrad.addColorStop(0.55, colorToRgba(innerGlow, 0.35));
     innerGrad.addColorStop(1.00, colorToRgba(innerGlow, 0));
     ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, r*0.82, 0, Math.PI*2); ctx.clip();
+    shapePath(r*0.82);
+    ctx.clip();
     ctx.fillStyle = innerGrad; ctx.fillRect(0, 0, size, size);
     ctx.restore();
   }
 
-  ctx.beginPath(); ctx.arc(cx, cy, r*0.82, 0, Math.PI*2); ctx.strokeStyle = colorCss; ctx.lineWidth = 8; ctx.stroke();
+  // Кольцо по форме.
+  ctx.save();
+  shapePath(r*0.82);
+  ctx.strokeStyle = colorCss; ctx.lineWidth = 8; ctx.stroke();
+  ctx.restore();
+
+  // Иконка поверх.
   if (iconImage) {
     const iconSize = r * 1.35;
     ctx.drawImage(iconImage, cx-iconSize/2, cy-iconSize/2, iconSize, iconSize);
@@ -5567,7 +5596,10 @@ export class View {
       //   ЧЁРНОЙ — белое.
       const ringCss = getKillerRingColor(enemySide, isKiller, colorCss);
 
-      const sprite = createOrbSprite(ringCss, MID_ICON_IMG, { innerGlow: '#3a8fff' });
+      const sprite = createOrbSprite(ringCss, EXPLORE_ICON_IMG, {
+        innerGlow: '#ff2ec4',
+        shape: isKiller ? 'square' : 'circle',
+      });
       const angle = (i / Math.max(1, ev.count)) * Math.PI * 2;
       sprite.position.set(center.x + Math.cos(angle) * 0.35, 0.55, center.z + Math.sin(angle) * 0.35);
       this.floatGroup.add(sprite);
@@ -5607,7 +5639,10 @@ export class View {
       //   ЧЁРНОЙ — белое.
       const ringCss = getKillerRingColor(enemySide, isKiller, colorCss);
 
-      const sprite = createOrbSprite(ringCss, EXPLORE_ICON_IMG, { innerGlow: '#ff2ec4' });
+      const sprite = createOrbSprite(ringCss, MID_ICON_IMG, {
+        innerGlow: '#3a8fff',
+        shape: isKiller ? 'square' : 'circle',
+      });
       const angle = (i / 3) * Math.PI * 2;
       sprite.position.set(start.x + Math.cos(angle) * 0.35, start.y, start.z + Math.sin(angle) * 0.35);
       this.floatGroup.add(sprite);
@@ -5651,7 +5686,10 @@ export class View {
     const baseRingCss = side === 'white' ? '#ffc300' : '#ef1f1f';
     const ringCss = getKillerRingColor(side, isKiller, baseRingCss);
 
-    const sprite = createOrbSprite(ringCss, DEATH_ICON_IMG, { innerGlow: '#ff8800' });
+    const sprite = createOrbSprite(ringCss, DEATH_ICON_IMG, {
+      innerGlow: '#ff8800',
+      shape: isKiller ? 'square' : 'circle',
+    });
     sprite.position.copy(start);
     this.floatGroup.add(sprite);
     this.powerOrbs.push({
@@ -6052,10 +6090,21 @@ export class View {
     const icon = iconFor(h.reason);
     const glowColor = glowFor(h.reason);
 
-    // Мягкое свечение вокруг пузырька — цветом команды-жертвы.
+    // ★ Убийственный пузырёк рисуем квадратом со скруглёнными углами —
+    //   той же формы, что и в полёте (см. createOrbSprite). Так игрок
+    //   и в игре, и на графике видит один и тот же визуальный маркер.
+    const shapePath = (rad) => {
+      ctx.beginPath();
+      if (h.isKiller) {
+        const rr = rad * 0.30;
+        roundRectPath(ctx, cx - rad, cy - rad, rad * 2, rad * 2, rr);
+      } else {
+        ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      }
+    };
+
+    // Мягкое свечение вокруг пузырька — цветом победителя.
     const glow = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 1.9);
-    // ★ Свечение всегда «победного» цвета, даже если кольцо чёрное —
-    //   иначе чёрное свечение сольётся с тёмным фоном.
     glow.addColorStop(0, colorToRgba(winColor, 0.55));
     glow.addColorStop(1, colorToRgba(winColor, 0));
     ctx.fillStyle = glow;
@@ -6063,9 +6112,8 @@ export class View {
     ctx.arc(cx, cy, r * 1.9, 0, Math.PI * 2);
     ctx.fill();
 
-    // Тёмный фон пузырька.
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    // Тёмный фон пузырька — по форме.
+    shapePath(r);
     ctx.fillStyle = 'rgba(10,10,20,0.95)';
     ctx.fill();
 
@@ -6076,8 +6124,7 @@ export class View {
       innerGrad.addColorStop(0.55, colorToRgba(glowColor, 0.30));
       innerGrad.addColorStop(1.00, colorToRgba(glowColor, 0));
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.95, 0, Math.PI * 2);
+      shapePath(r * 0.95);
       ctx.clip();
       ctx.fillStyle = innerGrad;
       ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
@@ -6088,16 +6135,14 @@ export class View {
     if (icon) {
       const iconSize = r * 1.35;
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.95, 0, Math.PI * 2);
+      shapePath(r * 0.95);
       ctx.clip();
       ctx.drawImage(icon, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
       ctx.restore();
     }
 
-    // Кольцо цвета команды.
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    // Кольцо по форме.
+    shapePath(r);
     ctx.strokeStyle = ringColor;
     ctx.lineWidth = 2.5;
     ctx.stroke();
