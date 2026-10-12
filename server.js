@@ -329,17 +329,19 @@ class Room {
     const events = result.events || [];
     this.broadcast({ type: 'events', events, actor: client.side });
 
-    const hasMight = events.some(e =>
-      e.kind === 'exploreResolved' ||
-      e.kind === 'powerOrbsFromCenter' ||
-      e.kind === 'deathOrbFromPiece'
-    );
-
     this._scheduleMightFromEvents(events);
 
-    if (!hasMight) {
-      this.broadcast({ type: 'state', state: this.game.getState() });
-    }
+    // ★ Всегда шлём актуальный state сразу после applyAction.
+    //   Раньше при уроне могущества (powerOrbsFromCenter /
+    //   exploreResolved / deathOrbFromPiece) state не уходил
+    //   вообще — клиент-оппонент до срабатывания таймера
+    //   _scheduleMightFromEvents оставался со старым currentTurn
+    //   и старым might. Из-за этого не гасла плашка действия
+    //   (render-loop проверяет game.currentTurn === mySide) и не
+    //   менялась позиция капитана. Повторный broadcast из таймера
+    //   идемпотентен: _restore() просто перезапишет те же поля
+    //   актуальным значением.
+    this.broadcast({ type: 'state', state: this.game.getState() });
   }
 
   _scheduleMightFromEvents(events) {
@@ -372,7 +374,8 @@ class Room {
       if (ev.kind === 'exploreResolved') {
         for (let i = 0; i < EXPLORE_ORB_COUNT; i++) {
           scheduleOne(ev.enemySide,
-            EXPLORE_PREP_MS + ORB_FLIGHT_MS + i * ORB_STAGGER_MS, 'explore');
+            EXPLORE_PREP_MS + ORB_FLIGHT_MS + i * ORB_STAGGER_MS, 'explore',
+            ev.actor, ev.turn);
         }
       } else if (ev.kind === 'powerOrbsFromCenter') {
         for (let i = 0; i < ev.count; i++) {
@@ -381,7 +384,8 @@ class Room {
             ev.actor, ev.turn);
         }
       } else if (ev.kind === 'deathOrbFromPiece') {
-        scheduleOne(ev.side, ORB_FLIGHT_MS, 'death');
+        scheduleOne(ev.side, ORB_FLIGHT_MS, 'death',
+          ev.actor, ev.turn);
       }
     }
   }

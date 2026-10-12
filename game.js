@@ -699,7 +699,14 @@ export class Game {
     this._applyReviveBuff(piece, events);
 
     const enemySide = side === 'white' ? 'black' : 'white';
-    events.push({ kind: 'exploreResolved', pieceId: piece.id, enemySide, orbsToEnemy: 3 });
+    // ★ actor/turn фиксируем здесь, а не в view/server на момент
+    //   прилёта пузырька: _doFinishEndTurn инкрементит halfTurn уже
+    //   после этого места, и пузырьки уезжали бы в колонку
+    //   следующего полухода на графике могущества.
+    events.push({
+      kind: 'exploreResolved', pieceId: piece.id, enemySide, orbsToEnemy: 3,
+      actor: side, turn: this.halfTurn,
+    });
     return { ok: true };
   }
 
@@ -986,9 +993,15 @@ export class Game {
     piece.cellId = baseId;
     piece.hp = piece.maxHp;
     this._applyReviveBuff(piece, events);
-
+	
     events.push({ kind: 'pieceDied', pieceId: piece.id });
-    events.push({ kind: 'deathOrbFromPiece', pieceId: piece.id, side: piece.side });
+    // ★ actor/turn — тот, чей сейчас ход и какой сейчас полуход.
+    //   Смерть всегда происходит внутри чужого действия (атаки),
+    //   так что currentTurn на этот момент — автор удара.
+    events.push({
+      kind: 'deathOrbFromPiece', pieceId: piece.id, side: piece.side,
+      actor: this.currentTurn, turn: this.halfTurn,
+    });
   }
 
   _applyReviveBuff(piece, events) {
