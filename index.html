@@ -12,6 +12,14 @@
   <script>
     window.addEventListener('error', (e) => {
       if (e.target && e.target.tagName === 'IMG') return;
+      // ★ Если игра уже стартовала — оверлей «three.js не загрузился»
+      //   показывать нельзя. Раньше этот обработчик ловил ЛЮБУЮ ошибку
+      //   на странице, включая случайные сбои посреди партии
+      //   (например, обрыв WebSocket при передаче хода) — и закрывал
+      //   работающую игру чёрным экраном. Теперь оверлей появляется
+      //   только если старт ещё не случился (нет window.game).
+      //   Все прочие ошибки просто уходят в консоль браузера.
+      if (window.game || window.view) return;
       if (!document.body) return;
       if (document.querySelector('#startup-error')) return;
       const box = document.createElement('div');
