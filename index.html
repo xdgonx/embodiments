@@ -2801,8 +2801,16 @@
   import { View } from './view.js';
   import { Net }  from './net.js';
 
+  // ★ Выносим все оверлеи из <body> в <html>. Это критично для
+  //   position: fixed — у body есть CSS-трансформация (её ставит
+  //   _fitBody в view.js), а трансформированный элемент становится
+  //   containing block для fixed-потомков. Из-за этого оверлей
+  //   разворачивался не на весь экран, а на прямоугольник игрового
+  //   поля, и сбоку были видны чёрные полосы (letterbox). Раньше
+  //   lobby-overlay в этом списке не было — отсюда «по бокам видно
+  //   поле сзади» при поиске игрока.
   ['orientation-overlay','card-overlay','tablet-overlay','deck-overlay','victory-overlay',
-   'waiting-overlay']
+   'waiting-overlay','lobby-overlay']
     .forEach(id => {
       const el = document.getElementById(id);
       if (el) document.documentElement.appendChild(el);

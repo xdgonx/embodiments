@@ -873,6 +873,18 @@ export class View {
         if (this.game && this.game.gameOver) {
           this._drawVictoryGraph();
         }
+        // ★ Страховка: если сейчас НАШ ход — плашка чужого действия
+        //   должна быть уже скрыта. Дублируем проверку из
+        //   _renderTurnPanel на случай, если по какой-то причине
+        //   renderAll не дошёл до _renderTurnPanel (ошибка раньше по
+        //   цепочке, прерывание по анимации, реконнект). Двойное
+        //   скрытие безвредно.
+        if (this.mySide && this.game && this.game.currentTurn === this.mySide) {
+          const banner = this.refs && this.refs.actionBanner;
+          if (banner && !banner.classList.contains('hidden')) {
+            this._hideActionBanner();
+          }
+        }
       };
     }
   }
@@ -7343,6 +7355,12 @@ _animateMove(ev) {
   _handleActionBanner(events) {
     if (!this.mySide) return;          // одиночная игра — плашки не нужны
     if (!events || !events.length) return;
+
+    // ★ Страховка от гонки событий и state. При переподключении или
+    //   задержке анимации события оппонента могут прилететь уже
+    //   ПОСЛЕ того, как сервер прислал state с нашим ходом. В этом
+    //   случае плашку показывать нельзя — ход уже наш.
+    if (this.game && this.game.currentTurn === this.mySide) return;
 
     const actor = this._eventActorSide(events);
     if (!actor) return;                // событие без явного действующего

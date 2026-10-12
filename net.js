@@ -40,6 +40,16 @@ export class Net {
         this.connected = true;
         this._reconnectAttempts = 0;
         this.ws.send(JSON.stringify({ type: 'join', ...this._joinArgs }));
+        // ★ Периодический ping каждые 20 секунд — заставляет сетевые
+        //   прокси и мобильные браузеры дольше держать соединение
+        //   открытым. Само по себе решает часть «микро-разрывов»,
+        //   когда вкладка ушла в фон на несколько секунд.
+        if (this._pingTimer) clearInterval(this._pingTimer);
+        this._pingTimer = setInterval(() => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            try { this.ws.send(JSON.stringify({ type: 'ping', t: Date.now() })); } catch {}
+          }
+        }, 20000);
       });
 
       this.ws.addEventListener('message', (e) => {
@@ -125,6 +135,7 @@ export class Net {
 
   close() {
     this._intentional = true;
+    if (this._pingTimer) { clearInterval(this._pingTimer); this._pingTimer = null; }
     if (this.ws) this.ws.close();
   }
 
