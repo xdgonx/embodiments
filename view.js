@@ -1137,16 +1137,32 @@ export class View {
     this.camera.position.set(0, 14, 9);
     this.camera.lookAt(0, 0, 0);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // ★ На мобильных:
+    //   — MSAA отключаем: при DPR ≥ 2 его не видно, а GPU он грузит
+    //     ощутимо;
+    //   — рисуем в DPR ≤ 2 вместо 3. Это НЕ разрешение исходных
+    //     текстур и НЕ аспект поля — это размер framebuffer'а.
+    //     PNG-файлы грузятся как есть, лейаут не меняется. Разница
+    //     между 2x и 3x на 5–6-дюймовом экране практически
+    //     неразличима на глаз.
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: !IS_MOBILE,
+      powerPreference: 'high-performance',
+    });
     this.renderer.domElement.style.display = 'block';
     this.renderer.domElement.style.position = 'absolute';
     this.renderer.domElement.style.top = '0';
     this.renderer.domElement.style.left = '0';
     const dpr = window.devicePixelRatio || 1;
-    const capped = Math.min(dpr, 3);
+    const dprCap = IS_MOBILE ? 2 : 3;
+    const capped = Math.min(dpr, dprCap);
     this.renderer.setPixelRatio(capped);
     this.renderer.setSize(VIRTUAL_W, VIRTUAL_H);
-    this.renderer.shadowMap.enabled = true;
+    // ★ Тени кастуются только на плоскость доски. Из-за почти
+    //   вертикальной камеры их вклад в картинку минимален, а каждая
+    //   перерисовка shadow map — это отдельный проход по всем
+    //   castShadow-объектам. На мобильных отключаем.
+    this.renderer.shadowMap.enabled = !IS_MOBILE;
     document.body.appendChild(this.renderer.domElement);
 
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
@@ -1286,11 +1302,15 @@ export class View {
     this.mouse = new THREE.Vector2();
     this.spinningHighlights = [];
 
+    let refitTimer = null;
     const refit = () => {
       this._fitBody();
-      setTimeout(() => this._fitBody(), 80);
-      setTimeout(() => this._fitBody(), 250);
-      setTimeout(() => this._fitBody(), 600);
+      if (refitTimer) clearTimeout(refitTimer);
+      refitTimer = setTimeout(() => {
+        refitTimer = null;
+        this._fitBody();
+        setTimeout(() => this._fitBody(), 200);
+      }, 60);
     };
 
     // Начальная подгонка — multi-shot: браузер может отдать корректные
@@ -1304,9 +1324,12 @@ export class View {
     window.addEventListener('orientationchange', refit);
 
     // visualViewport — самый надёжный источник размеров на мобильных.
+    // ★ Подписываемся ТОЛЬКО на resize, НЕ на scroll.
+    //   scroll на iPhone стреляет десятки раз при анимации адресной
+    //   строки, но размер канваса при этом не меняется — это лишние
+    //   setSize() и чёрные вспышки. Размер отслеживает resize.
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', refit);
-      window.visualViewport.addEventListener('scroll', refit);
     }
 
     // Страховка: ещё раз после полной загрузки страницы и после pageshow
@@ -1321,17 +1344,26 @@ export class View {
     document.addEventListener('fullscreenchange', () => this._fitBody());
     document.addEventListener('webkitfullscreenchange', () => this._fitBody());
   }
-
+  
   _fitBody() {
     // На мобильных визуальный вьюпорт надёжнее innerWidth/innerHeight:
     // последние могут быть «промежуточными» сразу после загрузки в
     // необычной ориентации или при показе/скрытии адресной строки.
     // visualViewport.width/height всегда отражают видимую область.
     const vv = window.visualViewport;
-    const vw = (vv && vv.width)  || window.innerWidth;
-    const vh = (vv && vv.height)
+    const vw = Math.round((vv && vv.width)  || window.innerWidth);
+    const vh = Math.round((vv && vv.height)
              || document.documentElement.clientHeight
-             || window.innerHeight;
+             || window.innerHeight);
+
+    // ★ Ключевая защита от чёрных вспышек.
+    //   По HTML-спеке присвоение canvas.width (даже того же значения)
+    //   ОЧИЩАЕТ канвас. Three.js в setSize() делает это безусловно.
+    //   Если размеры не изменились — просто выходим, канвас не трогаем.
+    if (this._lastFitW === vw && this._lastFitH === vh) return;
+    this._lastFitW = vw;
+    this._lastFitH = vh;
+
     const scale = Math.min(vw / VIRTUAL_W, vh / VIRTUAL_H);
     const ox = (vw - VIRTUAL_W * scale) / 2;
     const oy = (vh - VIRTUAL_H * scale) / 2;
@@ -1342,7 +1374,8 @@ export class View {
     canvas.style.width = (vw / scale) + 'px';
     canvas.style.height = (vh / scale) + 'px';
     const dpr = window.devicePixelRatio || 1;
-    const capped = Math.min(dpr, 3);
+    const dprCap = IS_MOBILE ? 2 : 3;
+    const capped = Math.min(dpr, dprCap);
     this.renderer.setPixelRatio(capped);
     this.renderer.setSize(vw, vh, false);
     const ASPECT = VIRTUAL_W / VIRTUAL_H;
@@ -7782,8 +7815,17 @@ _animateMove(ev) {
   _startRenderLoop() {
     const clock = new THREE.Clock();
     let firstFrame = true;
-    const loop = () => {
+    let lastT = 0;
+    const loop = (now) => {
       requestAnimationFrame(loop);
+
+      // ★ На ProMotion iPhone rAF срабатывает 120 раз/сек. Рендерить
+      //   120 fps 3D-сцену в DPR 3 — это почти вдвое больше работы GPU,
+      //   чем нужно. 60 fps визуально не отличимы, но телефон греется
+      //   заметно меньше. На десктопе не ограничиваем.
+      if (IS_MOBILE && now - lastT < 15) return;
+      lastT = now;
+
       const dt = firstFrame ? 0 : clock.getDelta();
       firstFrame = false;
       const t = clock.getElapsedTime();
