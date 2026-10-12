@@ -9,6 +9,21 @@
 	<link rel="apple-touch-icon" href="ui/apple-touch-icon.png">
 	<link rel="icon" type="image/png" href="ui/apple-touch-icon.png">
   <title>Воплощения</title>
+  <script>
+    window.addEventListener('error', (e) => {
+      if (e.target && e.target.tagName === 'IMG') return;
+      if (!document.body) return;
+      if (document.querySelector('#startup-error')) return;
+      const box = document.createElement('div');
+      box.id = 'startup-error';
+      box.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0a0a14;color:#eee;font-family:monospace;padding:24px;text-align:center;z-index:999999;flex-direction:column;gap:16px;';
+      box.innerHTML =
+        '<div style="font-size:18px;font-weight:bold;color:#ff8888">⚠ Не удалось запустить игру</div>' +
+        '<div style="font-size:13px;color:#aaa;max-width:520px">Похоже, библиотека three.js не загрузилась. Проверьте интернет.</div>' +
+        '<div style="font-size:11px;color:#666">Подробности — в консоли браузера.</div>';
+      document.body.appendChild(box);
+    }, true);
+  </script>
   <style>
             * {
       box-sizing: border-box;
@@ -118,7 +133,7 @@
       z-index: 10; min-width: 220px;
       cursor: pointer;
     }
-    #discard-left .header { color: #ef1f1f; font-size: 12px; text-align: center; margin-top: 8px; letter-spacing: 0.5px; }
+    #discard-left .header { color: #ff8888; font-size: 12px; text-align: center; margin-top: 8px; letter-spacing: 0.5px; }
     #discard-left .header .count { color: #ffffff; font-size: 13px; font-weight: bold; margin-left: 4px; }
     #discard-right {
       position: fixed; top: 8px; right: 8px;
@@ -131,7 +146,7 @@
       z-index: 10; min-width: 220px;
       cursor: pointer;
     }
-    #discard-right .header { color: #ffc300; font-size: 12px; text-align: center; margin-top: 8px; letter-spacing: 0.5px; }
+    #discard-right .header { color: #ffdf77; font-size: 12px; text-align: center; margin-top: 8px; letter-spacing: 0.5px; }
     #discard-right .header .count { color: #ffffff; font-size: 13px; font-weight: bold; margin-left: 4px; }
     #turn-panel {
       position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
@@ -230,6 +245,43 @@
       background: linear-gradient(to bottom, rgba(70,55,10,0.95), rgba(30,20,0,0.9));
       color: #ffffff;
       box-shadow: 0 0 18px rgba(255, 195, 0, 0.85), inset 0 0 12px rgba(255, 195, 0, 0.25);
+    }
+
+    /* ★ Скрытие кнопки завершения хода и плашка «ожидание оппонента».
+       В мультиплеере, когда сейчас ход не мой, вместо кнопки
+       показывается неинтерактивная плашка — чтобы игрок сразу
+       видел, что сейчас просто ждёт. */
+    #end-turn.hidden { display: none; }
+    #waiting-indicator {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 0.6px;
+      text-align: center;
+      user-select: none;
+      border: 1px dashed rgba(255,255,255,0.30);
+      background: rgba(20,20,30,0.55);
+      color: #ccc;
+      animation: waitPulse 1.6s ease-in-out infinite;
+    }
+    #waiting-indicator.hidden { display: none; }
+    #turn-panel.white-turn #waiting-indicator {
+      color: #ff8888;
+      border-color: rgba(239,31,31,0.55);
+      background: rgba(40,8,12,0.55);
+    }
+    #turn-panel.black-turn #waiting-indicator {
+      color: #ffdf77;
+      border-color: rgba(255,195,0,0.55);
+      background: rgba(40,30,6,0.55);
+    }
+    @keyframes waitPulse {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
     }
 
     #end-turn-confirm,
@@ -740,8 +792,7 @@
       background: rgba(20,20,30,0.95);
       border: 2px solid #ef1f1f; border-radius: 6px;
       cursor: pointer; user-select: none;
-      box-shadow: 0 0 14px rgba(239,31,31,0.65), 0 4px 10px rgba(0,0,0,0.6);
-      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+      transition: border-color 0.15s, background 0.15s;
     }
     #discard-trigger.hidden { display: none; }
     #discard-trigger img,
@@ -749,35 +800,22 @@
     #discard-trigger .btn-fallback,
     #location-bonus-icon .btn-fallback { color: #ef1f1f; font-size: 22px; font-weight: bold; }
 
-    @media (hover: hover) {
-      #discard-trigger:hover { transform: translateY(-3px) scale(1.05); }
-    }
 
-	@keyframes btnPulse {
-	  0%, 100% {
-		box-shadow: 0 0 14px var(--pulse-c1), 0 4px 10px rgba(0,0,0,0.6);
-		transform: scale(1);
-	  }
-	  50% {
-		box-shadow: 0 0 24px var(--pulse-c2), 0 0 40px var(--pulse-c3), 0 4px 10px rgba(0,0,0,0.6);
-		transform: scale(1.08);
-	  }
-	}
+	/* ★ Единый такт пульсации. Все «живые» кнопки берут фазу 0..1
+	   из CSS-переменной --pulse, которую каждый кадр обновляет view.js
+	   (см. _startRenderLoop). Период 1.6 с совпадает с подсветкой руки
+	   и 3D-свечением зерцала — мигает всё синхронно, никаких
+	   «гирлянд» из отдельных @keyframes. */
 	.action-btn,
 	#discard-trigger,
 	#location-bonus-icon {
-	  --pulse-c1: rgba(239, 31, 31, 0.65);
-	  --pulse-c2: rgba(239, 31, 31, 0.95);
-	  --pulse-c3: rgba(239, 31, 31, 0.35);
-	  animation: btnPulse 1.6s ease-in-out infinite;
+	  --pulse-rgb: 239, 31, 31;   /* белая команда — красный */
 	}
 	#card-actions.black-team .action-btn,
 	#mirror-action.black-team .action-btn,
 	#end-turn-confirm.black-turn #discard-trigger,
 	#location-bonus-panel.black-turn #location-bonus-icon {
-	  --pulse-c1: rgba(255, 195, 0, 0.65);
-	  --pulse-c2: rgba(255, 195, 0, 0.95);
-	  --pulse-c3: rgba(255, 195, 0, 0.35);
+	  --pulse-rgb: 255, 195, 0;   /* чёрная команда — жёлтый */
 	}
 	.action-btn.active,
 	#card-actions.black-team .action-btn.active,
@@ -786,9 +824,20 @@
 	#end-turn-confirm.black-turn #discard-trigger.active,
 	#location-bonus-icon.active,
 	#location-bonus-panel.black-turn #location-bonus-icon.active {
-	  --pulse-c1: rgba(51, 221, 85, 0.65);
-	  --pulse-c2: rgba(51, 221, 85, 0.95);
-	  --pulse-c3: rgba(51, 221, 85, 0.35);
+	  --pulse-rgb: 51, 221, 85;   /* активное состояние — зелёный */
+	}
+	/* Пульсирующая обводка для всех, кроме disabled/locked.
+	   Формула: радиус 14→24, alpha 0.65→0.95, второй ореол 0→40 —
+	   в точности раскладка прежнего @keyframes btnPulse 0/50/100%. */
+	.action-btn:not(.disabled),
+	#discard-trigger:not(.locked),
+	#location-bonus-icon {
+	  box-shadow:
+	    0 0 calc(14px + 10px * var(--pulse, 0))
+	        rgba(var(--pulse-rgb), calc(0.65 + 0.30 * var(--pulse, 0))),
+	    0 0 calc(0px + 40px * var(--pulse, 0))
+	        rgba(var(--pulse-rgb), calc(0.35 * var(--pulse, 0))),
+	    0 4px 10px rgba(0, 0, 0, 0.6);
 	}
 
 	#card-actions.black-team .action-btn,
@@ -799,19 +848,13 @@
 	#mirror-action.black-team .action-btn.disabled {
 	  border-color: #666;
 	}
+	/* Активное состояние: рамка и фон зелёные, бокс-шадоу — уже
+	   пульсирующий зелёный через --pulse-rgb выше. */
 	.action-btn.active,
-	#location-bonus-icon.active {
-	  transform: none !important;
-	  box-shadow: 0 0 16px rgba(51, 221, 85, 0.85), 0 4px 10px rgba(0,0,0,0.6) !important;
-	  border-color: #33dd55 !important;
-	  background: rgba(15, 50, 20, 0.95) !important;
-	}
+	#location-bonus-icon.active,
 	#discard-trigger.active {
 	  border-color: #33dd55 !important;
 	  background: rgba(15, 50, 20, 0.95) !important;
-	}
-	#location-bonus-icon.active {
-	  animation-play-state: paused;
 	}
 	.action-btn.active .btn-fallback,
 	#discard-trigger.active .btn-fallback,
@@ -823,7 +866,6 @@
 	  box-shadow: 0 0 6px rgba(120,120,120,0.5), 0 4px 10px rgba(0,0,0,0.6) !important;
 	}
 	#discard-trigger.locked {
-	  animation-play-state: paused;
 	  cursor: default;
 	}
 	#end-turn-confirm.black-turn #discard-trigger,
@@ -837,7 +879,6 @@
 	}
 	#location-bonus-panel.black-turn #location-bonus-icon.active {
 	  border-color: #33dd55 !important;
-	  box-shadow: 0 0 18px rgba(51,221,85,0.9), 0 4px 10px rgba(0,0,0,0.6) !important;
 	}
 
     .action-btn .btn-fallback { color: #ef1f1f; font-size: 22px; }
@@ -894,6 +935,103 @@
     #hand-black { border-color: #ffc300; background: linear-gradient(to top, rgba(60,50,10,0.85), rgba(0,0,0,0.6)); }
     .hand-block.inactive .hand-card { opacity: 0.85; }
     .hand-block.inactive .hand-header { opacity: 0.85; }
+
+    /* ★ Состояния руки в мультиплеере. В одиночной игре сюда не
+       попадаем — там остаётся прежнее .inactive с opacity 0.85. */
+	       /* ★ В мультиплеере панель руки уже приглушена (hand-waiting /
+       hand-opponent). Карты внутри не надо затемнять дополнительно —
+       иначе у оппонента они превратятся в чёрные квадраты.
+       Оставляем .disabled как «только курсор и запрет ховера». */
+    .hand-block.hand-waiting .hand-card.disabled,
+    .hand-block.hand-opponent .hand-card.disabled,
+    .hand-block.hand-opponent-active .hand-card.disabled {
+      filter: none;
+      background: linear-gradient(160deg, #2a2a4a, #15152a);
+      cursor: not-allowed;
+    }
+    /* ★ Гасим тёмный псевдоэлемент ТОЛЬКО у руки оппонента.
+       У .hand-waiting (это моя рука в чужой ход) затемнение
+       намеренно оставляем — как было до правки. */
+    .hand-block.hand-opponent .hand-card.disabled::after,
+    .hand-block.hand-opponent-active .hand-card.disabled::after {
+      display: none;
+    }
+    #hand-white, #hand-black {
+      /* ★ box-shadow меняется каждый кадр через --pulse — transition
+         на нём только добавлял бы задержку, поэтому убран. */
+      transition: opacity 0.25s ease, filter 0.25s ease;
+    }
+
+    /* ★ Своя рука, мой ход: мигает по той же --pulse, что и кнопки.
+       Радиус 10→26, alpha 0.35→0.90, внутренняя тень 15→26 — как
+       раньше в handPulseWhite/handPulseBlack. Период тоже 1.6 с. */
+    #hand-white.hand-active {
+      opacity: 1;
+      filter: none;
+      box-shadow:
+        0 0 calc(10px + 16px * var(--pulse, 0)) rgba(239, 31, 31, calc(0.35 + 0.55 * var(--pulse, 0))),
+        inset 0 0 calc(15px + 11px * var(--pulse, 0)) rgba(239, 31, 31, calc(0.10 + 0.18 * var(--pulse, 0)));
+    }
+    #hand-black.hand-active {
+      opacity: 1;
+      filter: none;
+      box-shadow:
+        0 0 calc(10px + 16px * var(--pulse, 0)) rgba(255, 195, 0, calc(0.35 + 0.55 * var(--pulse, 0))),
+        inset 0 0 calc(15px + 11px * var(--pulse, 0)) rgba(255, 195, 0, calc(0.10 + 0.18 * var(--pulse, 0)));
+    }
+    /* Своя рука, сейчас чужой ход. Слегка приглушена, но заметно
+       ярче, чем рука оппонента. */
+    #hand-white.hand-waiting,
+    #hand-black.hand-waiting {
+      opacity: 0.85;
+      filter: none;
+    }
+
+    /* Рука оппонента. Пока он ждёт — приглушена (0.5).
+       Когда его ход — разгорается тем же пульсом, что и своя
+       активная рука: игрок сразу видит, чья сейчас очередь. */
+    #hand-white.hand-opponent,
+    #hand-black.hand-opponent {
+      opacity: 0.5;
+      filter: none;
+    }
+    #hand-white.hand-opponent.hand-opponent-active {
+      opacity: 1;
+      box-shadow:
+        0 0 calc(10px + 16px * var(--pulse, 0)) rgba(239, 31, 31, calc(0.35 + 0.55 * var(--pulse, 0))),
+        inset 0 0 calc(15px + 11px * var(--pulse, 0)) rgba(239, 31, 31, calc(0.10 + 0.18 * var(--pulse, 0)));
+    }
+    #hand-black.hand-opponent.hand-opponent-active {
+      opacity: 1;
+      box-shadow:
+        0 0 calc(10px + 16px * var(--pulse, 0)) rgba(255, 195, 0, calc(0.35 + 0.55 * var(--pulse, 0))),
+        inset 0 0 calc(15px + 11px * var(--pulse, 0)) rgba(255, 195, 0, calc(0.10 + 0.18 * var(--pulse, 0)));
+    }
+
+    /* ★ Карты в неактивной руке не приподнимаются при наведении.
+       Своя рука вне хода и любая чужая — hover заблокирован. */
+    .hand-block.hand-waiting .hand-card:hover,
+    .hand-block.hand-opponent .hand-card:hover,
+    .hand-block.inactive .hand-card:hover {
+      transform: none !important;
+      box-shadow: none !important;
+      z-index: auto !important;
+    }
+
+    /* Бейдж статуса в заголовке руки. Пустой — не отображается. */
+    .hand-status {
+      font-weight: bold;
+      letter-spacing: 0.6px;
+      margin-left: 6px;
+    }
+    .hand-status:empty { display: none; }
+
+    #hand-white.hand-active .hand-status { color: #ffe0e0; text-shadow: 0 0 6px rgba(239,31,31,0.7); }
+    #hand-black.hand-active .hand-status { color: #fff2c0; text-shadow: 0 0 6px rgba(255,195,0,0.7); }
+    #hand-white.hand-waiting .hand-status,
+    #hand-white.hand-opponent .hand-status,
+    #hand-black.hand-waiting .hand-status,
+    #hand-black.hand-opponent .hand-status { color: #888; }
     .hand-header { color: #aac; font-size: 12px; margin-bottom: 8px; letter-spacing: 0.5px; }
     #hand-white .hand-header { color: #ff8888; }
     #hand-black .hand-header { color: #ffdf77; }
@@ -1000,8 +1138,7 @@
       position: relative; display: flex; align-items: center; justify-content: center;
       padding: 4px 8px; cursor: pointer;
       background: rgba(20,20,30,0.95); border: 2px solid #ef1f1f; border-radius: 6px;
-      box-shadow: 0 0 14px rgba(239, 31, 31, 0.65), 0 4px 10px rgba(0,0,0,0.6);
-      transition: border-color 0.15s, box-shadow 0.15s; user-select: none;
+      transition: border-color 0.15s; user-select: none;
     }
     .action-btn img { width: 32px; height: 32px; object-fit: contain; display: block; }
     .action-btn.disabled { border-color: #666; background: rgba(30,30,40,0.9); cursor: not-allowed; }
@@ -1403,27 +1540,352 @@
       border: 2px solid #ffc300;
       box-shadow: 0 0 14px rgba(255,195,0,0.7), 0 4px 10px rgba(0,0,0,0.6);
     }
+        /* ★ Активное (зелёное) состояние кнопки бонуса. box-shadow
+       намеренно не задан здесь — его рисует правило пульсации ниже,
+       подставляя зелёный цвет через --pulse-rgb. Раньше тут был
+       статичный зелёный box-shadow с !important — из-за него
+       активная кнопка «замирала», пока остальные мигали. */
     .location-bonus-btn.active {
       border-color: #33dd55 !important;
       background: rgba(15, 50, 20, 0.95) !important;
-      box-shadow: 0 0 22px rgba(51,221,85,0.95), 0 4px 10px rgba(0,0,0,0.6) !important;
+    }
+    /* ★ Доступная кнопка бонуса у СВОЕЙ стороны пульсирует от общей
+       фазы --pulse — как кнопки действий и подсветка руки. Цвет
+       задаётся переменной --pulse-rgb, чтобы можно было подменить
+       его одним правилом (см. .active ниже). */
+    .location-bonus-btn:not(.disabled).white-team {
+      --pulse-rgb: 239, 31, 31;
+      box-shadow:
+        0 0 calc(14px + 14px * var(--pulse, 0)) rgba(var(--pulse-rgb), calc(0.7 + 0.30 * var(--pulse, 0))),
+        0 0 calc(0px + 30px * var(--pulse, 0)) rgba(var(--pulse-rgb), calc(0.5 * var(--pulse, 0))),
+        0 4px 10px rgba(0, 0, 0, 0.6);
+    }
+    .location-bonus-btn:not(.disabled).black-team {
+      --pulse-rgb: 255, 195, 0;
+      box-shadow:
+        0 0 calc(14px + 14px * var(--pulse, 0)) rgba(var(--pulse-rgb), calc(0.7 + 0.30 * var(--pulse, 0))),
+        0 0 calc(0px + 30px * var(--pulse, 0)) rgba(var(--pulse-rgb), calc(0.5 * var(--pulse, 0))),
+        0 4px 10px rgba(0, 0, 0, 0.6);
+    }
+    /* ★ Активная кнопка бонуса — тот же ритм, что и у остальных,
+       только цвет зелёный. Специфичность :not(.disabled).active —
+       (0,3,0), как и у .white-team/.black-team; правило идёт позже,
+       поэтому перебивает их значение --pulse-rgb. Сам box-shadow
+       берётся из white-team/black-team — он читает переменную и
+       получает уже зелёный цвет. */
+    .location-bonus-btn:not(.disabled).active {
+      --pulse-rgb: 51, 221, 85;
     }
     .location-bonus-btn.active .lb-icon { filter: none; }
+    /* ★ Отключённая кнопка бонуса. Не затемняем её через opacity —
+       иначе на тёмном поле её просто не видно, и игрок не понимает,
+       что у стороны вообще есть бонус. Вместо этого — обесцвечивание
+       и лёгкое пригашение: кнопка читается, но «серая». */
     .location-bonus-btn.disabled {
-      filter: none;
+      filter: grayscale(0.85) brightness(0.85);
+      opacity: 1;
       border-color: #6b6b6b;
-      background: linear-gradient(135deg, rgba(50,50,50,0.9), rgba(15,15,15,0.75));
-      box-shadow: 0 0 10px rgba(120,120,120,0.45), 0 4px 10px rgba(0,0,0,0.6);
-      cursor: not-allowed;
+      background: linear-gradient(135deg, rgba(50,50,50,0.95), rgba(20,20,20,0.85));
+      box-shadow: 0 0 10px rgba(120,120,120,0.55), 0 4px 10px rgba(0,0,0,0.6);
+      cursor: not-allowed !important;
+    }
+    .location-bonus-btn.disabled .lb-icon {
+      filter: grayscale(1) brightness(0.7);
+      opacity: 0.9;
     }
     .location-bonus-btn.disabled .lb-icon {
       filter: grayscale(1) brightness(0.65);
     }
+    /* ★ Кнопка бонуса на стороне оппонента в ЕГО ход: свечение
+       как у обычной доступной кнопки, но без клика — только
+       чтобы визуально было видно, чья сейчас очередь. */
+    .location-bonus-btn.opponent-turn {
+      cursor: not-allowed !important;
+    }
 
+    /* ★ Плашка действий оппонента в мультиплеере.
+       Показывается при прилёте событий от чужого хода и висит
+       до момента, пока не появится следующая плашка. */
+    #action-banner {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 14;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px 8px 8px;
+      border-radius: 12px;
+      min-width: 280px;
+      max-width: 560px;
+      font-family: monospace;
+      color: #eee;
+      pointer-events: none;
+      animation: abFadeIn 0.28s ease-out;
+    }
+    #action-banner.hidden { display: none; }
+    #action-banner.white-team {
+      background: linear-gradient(to bottom, rgba(60,10,10,0.95), rgba(0,0,0,0.78));
+      border: 2px solid #ef1f1f;
+      box-shadow: 0 6px 24px rgba(239,31,31,0.5), 0 8px 24px rgba(0,0,0,0.85);
+    }
+    #action-banner.black-team {
+      background: linear-gradient(to bottom, rgba(60,50,10,0.95), rgba(0,0,0,0.78));
+      border: 2px solid #ffc300;
+      box-shadow: 0 6px 24px rgba(255,195,0,0.5), 0 8px 24px rgba(0,0,0,0.85);
+    }
+    #action-banner .ab-portrait {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      background-size: cover;
+      background-position: center;
+      background-color: #222;
+      flex-shrink: 0;
+      border: 2px solid #fff;
+    }
+    #action-banner.black-team .ab-portrait { border-color: #0a0a0a; }
+    /* ★ Крупная карта, вокруг которой строится вся плашка. Стоит
+       слева от обеих строк текста — на высоту всего блока, а не
+       встроена в заголовок. */
+    #action-banner .ab-main-card {
+      width: 32px;
+      height: 45px;
+      border-radius: 4px;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: #222;
+      border: 1px solid #666;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    }
+    #action-banner.white-team .ab-main-card { border-color: #ef1f1f; }
+    #action-banner.black-team .ab-main-card { border-color: #ffc300; }
+    #action-banner .ab-main-card img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+    #action-banner .ab-content { flex: 1; min-width: 0; }
+    #action-banner .ab-title {
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 3px;
+      letter-spacing: 0.3px;
+    }
+    #action-banner.white-team .ab-title { color: #ff8888; }
+    #action-banner.black-team .ab-title { color: #ffdf77; }
+    #action-banner .ab-detail {
+      font-size: 11px;
+      color: #ccc;
+      line-height: 1.35;
+      word-break: break-word;
+      white-space: pre-line;
+    }
+    /* ★ Мини-карта прямо внутри строки деталей — для бонуса 1,
+       где нужно показать «Сбросил [карта] и взял из колоды [карта]». */
+    #action-banner .ab-detail-card {
+      display: inline-block;
+      width: 22px;
+      height: 30px;
+      vertical-align: middle;
+      margin: 0 3px;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid #666;
+      background: #222;
+    }
+    #action-banner.white-team .ab-detail-card { border-color: #ef1f1f; }
+    #action-banner.black-team .ab-detail-card { border-color: #ffc300; }
+    #action-banner .ab-detail-card img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+    /* ★ Круглый портрет персонажа прямо внутри строки деталей —
+       для бонуса 5, где нужно показать «[кружок] переместился A1 → B2». */
+    #action-banner .ab-detail-piece {
+      display: inline-block;
+      width: 30px;
+      height: 30px;
+      vertical-align: middle;
+      margin: 0 4px;
+      border-radius: 50%;
+      overflow: hidden;
+      background-size: cover;
+      background-position: center;
+      background-color: #222;
+      border: 2px solid #fff;
+      flex-shrink: 0;
+    }
+    #action-banner.black-team .ab-detail-piece { border-color: #0a0a0a; }
+    /* ★ Сердечки прямо в строке деталей — для атаки. Показывают
+       hp/maxHp до и после удара. */
+    #action-banner .ab-detail-hearts {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      vertical-align: middle;
+      margin: 4px 0;
+    }
+    #action-banner .ab-hearts-canvas {
+      height: 22px;
+      width: auto;
+      display: block;
+    }
+    #action-banner .ab-hearts-arrow {
+      color: #aaa;
+      font-size: 14px;
+      font-weight: bold;
+      line-height: 1;
+    }
+    #action-banner .ab-card {
+      width: 40px; height: 56px;
+      border-radius: 4px;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: #222;
+      border: 1px solid #555;
+    }
+    #action-banner.white-team .ab-card { border-color: #ef1f1f; }
+    #action-banner.black-team .ab-card { border-color: #ffc300; }
+    #action-banner .ab-card img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+    @keyframes abFadeIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+      to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    @media (max-width: 1200px), (pointer: coarse) {
+      #action-banner { top: 108px; max-width: 92vw; }
+    }
+
+    /* ★ Три локальные кнопки-тумблера над полем, по верхней
+       границе слева направо. Не синхронизируются в мультиплеере —
+       у каждого игрока своё состояние этих режимов. */
+    #local-toggles {
+      position: fixed;
+      /* left/top задаются из JS (_projectLocalToggles) — ряд
+         привязан к левому-дальнему углу доски и двигается
+         вместе с полем при зуме и пане. Значения ниже — только
+         «стартовые», до первого рендера, чтобы кнопки не мигнули
+         в углу экрана. */
+      left: 0;
+      top: 0;
+      display: flex;
+      flex-direction: row;
+      gap: 6px;
+      z-index: 12;
+      pointer-events: auto;
+    }
+    .local-toggle-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      border: 2px solid #555;
+      background: rgba(20,20,30,0.85);
+      color: #999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s;
+    }
+    @media (hover: hover) {
+      .local-toggle-btn:hover {
+        border-color: #999;
+        color: #ddd;
+      }
+    }
+    .local-toggle-btn.active {
+      border-color: #33dd55;
+      background: rgba(15,50,20,0.9);
+      color: #55ff77;
+      box-shadow: 0 0 12px rgba(51,221,85,0.6);
+    }
     #reveal-cards-layer {
       position: fixed; inset: 0;
       pointer-events: none;
       z-index: 30;
+    }
+    #location-influence-highlights {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 11;
+    }
+    .location-influence-highlight {
+      position: fixed;
+      width: 180px;
+      height: 30px;
+      margin-left: -90px;
+      margin-top: -15px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      text-shadow: 0 0 6px rgba(0,0,0,0.95);
+      user-select: none;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      overflow: hidden;
+      white-space: nowrap;
+      /* ★ Вся плашка — фон, рамка, свечение, текст — на 50% прозрачности. */
+      opacity: 1;
+    }
+    .location-influence-highlight.hidden { display: none; }
+    .location-influence-highlight.white-team {
+      background: linear-gradient(135deg, rgba(60,10,10,0.85), rgba(0,0,0,0.6));
+      border: 2px solid #ef1f1f;
+      color: #ff8888;
+      box-shadow: 0 0 18px rgba(239,31,31,0.7), 0 4px 10px rgba(0,0,0,0.6);
+    }
+    .location-influence-highlight.black-team {
+      background: linear-gradient(135deg, rgba(60,50,10,0.85), rgba(0,0,0,0.6));
+      border: 2px solid #ffc300;
+      color: #ffdf77;
+      box-shadow: 0 0 18px rgba(255,195,0,0.7), 0 4px 10px rgba(0,0,0,0.6);
+    }
+    .location-influence-highlight .lih-scores {
+      /* ★ Размер и вес наследуются от плашки (12px, bold) —
+         цифры встают на ту же базовую линию, что и имя, без
+         отдельных правил выравнивания. */
+      opacity: 0.9;
+      margin-left: 6px;
+    }
+    /* ★ Цифры влияния — каждая своим цветом команды, независимо
+       от цвета плашки. Те же светлые оттенки, что используются
+       для заголовков «Рука белых/чёрных» и подписей хода. */
+    .location-influence-highlight .lih-white {
+      color: #ff8888;
+    }
+    .location-influence-highlight .lih-black {
+      color: #ffdf77;
+    }
+    #cell-labels-layer {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 11;
+      display: none;
+    }
+    #cell-labels-layer.visible { display: block; }
+    .cell-label {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      font-family: monospace;
+      font-weight: bold;
+      font-size: 32px;
+      color: #ffffff;
+      text-shadow:
+        -2px -2px 0 #000, 2px -2px 0 #000,
+        -2px  2px 0 #000, 2px  2px 0 #000,
+         0 0 10px rgba(0,0,0,0.95);
+      user-select: none;
+      pointer-events: none;
+      line-height: 1;
+      white-space: nowrap;
     }
     .reveal-card {
       position: absolute;
@@ -1477,6 +1939,7 @@
       margin-top:  calc(clamp(46px, 2.9vw, 56px) / -2);
       font-size: clamp(18px, 1.4vw, 26px);
     }
+	
 
     .reveal-card {
       width:  clamp(88px, 5.7vw, 110px);
@@ -1919,6 +2382,160 @@
         font-size: 12px;
       }
     }
+
+#waiting-overlay {
+  position: fixed; inset: 0; z-index: 20001;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #1a1a2e 0%, #000 80%);
+  font-family: monospace; padding: 24px;
+}
+#waiting-overlay.hidden { display: none; }
+.waiting-panel {
+  background: rgba(15,15,25,0.95);
+  border: 2px solid #ef1f1f;
+  border-radius: 14px;
+  padding: 32px 44px;
+  min-width: 340px;
+  max-width: 92vw;
+  text-align: center;
+  color: #eee;
+  box-shadow: 0 0 60px rgba(239,31,31,0.45), 0 20px 60px rgba(0,0,0,0.8);
+}
+.waiting-title {
+  font-size: 18px; font-weight: bold;
+  color: #ff8888; letter-spacing: 1px;
+  margin-bottom: 24px;
+}
+.waiting-code-label {
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  color: #888; margin-bottom: 6px;
+}
+.waiting-code {
+  font-size: 42px; font-weight: bold;
+  letter-spacing: 8px; color: #ffc300;
+  text-shadow: 0 0 24px rgba(255,195,0,0.7);
+  margin-bottom: 8px;
+}
+.waiting-hint {
+  font-size: 11px; color: #888; letter-spacing: 0.5px;
+  margin-bottom: 24px;
+}
+.waiting-players {
+  display: flex; flex-direction: column; gap: 8px; margin-top: 16px;
+}
+.waiting-player {
+  display: flex; align-items: center;
+  padding: 10px 16px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: left;
+}
+.waiting-player .wp-side {
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: #888; margin-right: 12px; flex-shrink: 0; width: 70px;
+}
+.waiting-player .wp-name {
+  color: #eee; font-weight: bold; flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.waiting-player-pending { opacity: 0.7; }
+.waiting-player-pending .wp-name {
+  color: #888; font-style: italic; font-weight: normal;
+  animation: roomWaitPulse 1.6s ease-in-out infinite;
+}
+
+.waiting-panel .starting-mode { display: none; }
+.waiting-panel.starting .waiting-mode { display: none; }
+.waiting-panel.starting .starting-mode { display: block; }
+
+.starting-title {
+  font-size: 20px; font-weight: bold;
+  color: #ffc300; letter-spacing: 1px;
+  margin-bottom: 22px;
+  text-shadow: 0 0 18px rgba(255,195,0,0.6);
+}
+.starting-line {
+  display: flex; align-items: center; justify-content: center;
+  gap: 16px; padding: 12px 18px; margin-bottom: 10px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.5);
+  font-size: 18px;
+}
+.starting-line.starting-white { border: 1px solid rgba(239,31,31,0.55); }
+.starting-line.starting-black { border: 1px solid rgba(255,195,0,0.55); }
+.starting-side {
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  font-weight: bold; width: 62px; text-align: left;
+}
+.starting-white .starting-side { color: #ff8888; }
+.starting-black .starting-side { color: #ffdf77; }
+.starting-name { color: #fff; font-weight: bold; flex: 1; text-align: left; }
+.starting-you {
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: #33dd55; font-weight: bold;
+  padding: 2px 6px; border-radius: 4px;
+  background: rgba(51,221,85,0.15);
+  border: 1px solid rgba(51,221,85,0.4);
+  flex-shrink: 0;
+}
+.starting-you:empty { display: none; }
+
+	#lobby-overlay { position: fixed; inset: 0; z-index: 20000;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #1a1a2e 0%, #000 80%); }
+#lobby-overlay.hidden { display: none; }
+.lobby-panel { background: rgba(15,15,25,0.95); border: 2px solid #ef1f1f;
+  border-radius: 14px; padding: 26px 32px; min-width: 320px; color: #eee;
+  box-shadow: 0 0 40px rgba(239,31,31,0.4); font-family: monospace; }
+.lobby-title { font-size: 18px; font-weight: bold; margin-bottom: 18px;
+  text-align: center; color: #ff8888; }
+.lobby-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.lobby-row label { font-size: 11px; color: #aaa; letter-spacing: 1px; }
+.lobby-row input { background: #111; border: 1px solid #444; color: #eee;
+  padding: 8px 10px; border-radius: 6px; font-family: monospace; font-size: 14px; }
+#lobby-connect { width: 100%; margin-top: 8px; padding: 10px;
+  background: #2a6; color: #fff; border: none; border-radius: 6px;
+  font-family: monospace; font-size: 14px; font-weight: bold; cursor: pointer; }
+#lobby-connect:hover { background: #3c8; }
+#lobby-status { margin-top: 12px; font-size: 12px; color: #aaa;
+  text-align: center; min-height: 16px; }
+
+#lobby-quick { width: 100%; margin-top: 8px; padding: 12px;
+  background: linear-gradient(to bottom, rgba(255,195,0,0.95), rgba(200,140,0,0.9));
+  color: #1a1a2e; border: none; border-radius: 6px;
+  font-family: monospace; font-size: 15px; font-weight: bold;
+  cursor: pointer; letter-spacing: 0.5px;
+  box-shadow: 0 0 18px rgba(255,195,0,0.4); }
+#lobby-quick:hover { background: linear-gradient(to bottom, #ffd24d, #ffc300); }
+#lobby-quick:disabled { opacity: 0.5; cursor: not-allowed; }
+#lobby-connect:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.lobby-or { text-align: center; color: #555; font-size: 11px;
+  letter-spacing: 2px; margin: 12px 0 6px; text-transform: uppercase; }
+
+#lobby-form-panel.hidden, #lobby-search-panel.hidden { display: none; }
+
+#lobby-search-panel { text-align: center; }
+.lobby-search-spinner {
+  font-size: 52px; margin: 20px 0 12px; display: block;
+  animation: lobbySpin 1.6s ease-in-out infinite;
+}
+@keyframes lobbySpin {
+  0%, 100% { transform: rotate(0deg) scale(1); opacity: 0.85; }
+  50%      { transform: rotate(180deg) scale(1.15); opacity: 1; }
+}
+.lobby-search-hint { color: #aaa; font-size: 12px;
+  letter-spacing: 0.5px; margin-bottom: 22px; }
+#lobby-cancel { width: 100%; padding: 9px;
+  background: #3a1a1a; color: #ff8888;
+  border: 1px solid #ef1f1f; border-radius: 6px;
+  font-family: monospace; font-size: 13px; font-weight: bold;
+  cursor: pointer; letter-spacing: 0.5px; }
+#lobby-cancel:hover { background: #5a2020; color: #fff; }
+#lobby-search-status { margin-top: 12px; font-size: 12px; color: #aaa;
+  text-align: center; min-height: 16px; }
   </style>
 </head>
 <body>
@@ -1952,13 +2569,15 @@
 
   <div id="discard-left">
     <div id="white-discard-slots" class="discard-slots-row"></div>
-    <div class="header">Сброс белых <span class="count" id="white-discard-count">0</span></div>
+    <div class="header"><span id="white-discard-label">Сброс белых</span> <span class="count" id="white-discard-count">0</span></div>
   </div>
 
   <div id="discard-right">
     <div id="black-discard-slots" class="discard-slots-row"></div>
-    <div class="header">Сброс чёрных <span class="count" id="black-discard-count">0</span></div>
+    <div class="header"><span id="black-discard-label">Сброс чёрных</span> <span class="count" id="black-discard-count">0</span></div>
   </div>
+
+  <div id="action-banner" class="hidden"></div>
 
   <div id="bottom-left">
     <div class="deck-block">
@@ -1966,7 +2585,7 @@
       <div class="deck-visual" id="white-deck-visual"></div>
     </div>
     <div class="hand-block" id="hand-white">
-      <div class="hand-header" id="white-hand-header">Рука белых<span class="played-info"> · Сыграно: <strong id="white-played">0</strong> / 4</span></div>
+      <div class="hand-header" id="white-hand-header"><span id="white-hand-label">Рука белых</span><span class="hand-status" id="white-hand-status"></span><span class="played-info"> · Сыграно: <strong id="white-played">0</strong> / 4</span></div>
       <div class="slots" id="hand-white-slots"></div>
     </div>
   </div>
@@ -1975,6 +2594,7 @@
     <div id="turn-label" class="white">● Ход белых</div>
     <div id="turn-number">Ход №1</div>
     <button id="end-turn">Подготовка к завершению хода</button>
+    <div id="waiting-indicator" class="hidden">⏳ Ожидание хода оппонента</div>
   </div>
 
   <div id="end-turn-confirm" class="hidden">
@@ -2070,7 +2690,7 @@
 
   <div id="bottom-right">
     <div class="hand-block" id="hand-black">
-      <div class="hand-header" id="black-hand-header">Рука чёрных<span class="played-info"> · Сыграно: <strong id="black-played">0</strong> / 4</span></div>
+      <div class="hand-header" id="black-hand-header"><span id="black-hand-label">Рука чёрных</span><span class="hand-status" id="black-hand-status"></span><span class="played-info"> · Сыграно: <strong id="black-played">0</strong> / 4</span></div>
       <div class="slots" id="hand-black-slots"></div>
     </div>
     <div class="deck-block">
@@ -2079,13 +2699,84 @@
     </div>
   </div>
 
+  <div id="local-toggles">
+    <div class="local-toggle-btn" id="local-toggle-cell" title="Показать номера ячеек (Shift)">#</div>
+    <div class="local-toggle-btn" id="local-toggle-loc" title="Показать владельцев локаций">◆</div>
+    <div class="local-toggle-btn" id="local-toggle-extras" title="Показать слоты для дополнений (G)">◇</div>
+  </div>
   <div id="location-bonuses"></div>
+  <div id="location-influence-highlights"></div>
   <div id="mirror-field-reminders"></div>
   <div id="reveal-cards-layer"></div>
+  <div id="cell-labels-layer"></div>
   <div id="fly-cards-layer"></div>
-
+  
     <div id="discard-dim-overlay"></div>
   <button id="discard-pick-btn" class="discard-pick-btn hidden">Сбросить</button>
+
+  <div id="waiting-overlay" class="hidden">
+    <div class="waiting-panel">
+      <div class="waiting-mode">
+        <div class="waiting-title">⏳ Ожидание второго игрока</div>
+        <div class="waiting-code-label">Код комнаты</div>
+        <div class="waiting-code" id="waiting-code">—</div>
+        <div class="waiting-hint">Передайте этот код второму игроку</div>
+        <div class="waiting-players">
+          <div class="waiting-player">
+            <div class="wp-side">Игрок 1</div>
+            <div class="wp-name" id="waiting-player-1">—</div>
+          </div>
+          <div class="waiting-player waiting-player-pending">
+            <div class="wp-side">Игрок 2</div>
+            <div class="wp-name" id="waiting-player-2">Ожидание…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="starting-mode">
+        <div class="starting-title">🎮 Игра начинается</div>
+        <div class="starting-line starting-white">
+          <span class="starting-side">Белые</span>
+          <span class="starting-name" id="starting-white-name">—</span>
+          <span class="starting-you" id="starting-white-you"></span>
+        </div>
+        <div class="starting-line starting-black">
+          <span class="starting-side">Чёрные</span>
+          <span class="starting-name" id="starting-black-name">—</span>
+          <span class="starting-you" id="starting-black-you"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+ <div id="lobby-overlay" class="hidden">
+    <div class="lobby-panel">
+      <div id="lobby-form-panel">
+        <div class="lobby-title">Воплощения — онлайн</div>
+        <div class="lobby-row">
+          <label>Имя:</label>
+          <input id="lobby-name" type="text" maxlength="16" placeholder="Вася">
+        </div>
+        <button id="lobby-quick">🎲 Быстрая игра</button>
+        <div class="lobby-or">— или —</div>
+        <div class="lobby-row">
+          <label>Код комнаты (пусто = создать новую):</label>
+          <input id="lobby-code" type="text" maxlength="4" placeholder="ABCD">
+        </div>
+        <button id="lobby-connect">Войти по коду</button>
+        <div id="lobby-status"></div>
+      </div>
+
+      <div id="lobby-search-panel" class="hidden">
+        <div class="lobby-title">🔍 Поиск игрока…</div>
+        <div class="lobby-search-spinner">⏳</div>
+        <div class="lobby-search-hint">Подбираем случайного противника</div>
+        <button id="lobby-cancel">Отменить поиск</button>
+        <div id="lobby-search-status"></div>
+      </div>
+    </div>
+  </div>
 
   <div id="orientation-overlay">
     <div class="oo-icon">📱</div>
@@ -2093,72 +2784,484 @@
     <div class="oo-text">Для игры нужен горизонтальный режим — держите телефон боком.</div>
   </div>
 
-  <script type="importmap">
-  { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
-  </script>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
 
 <script type="module">
   import { Game } from './game.js';
   import { View } from './view.js';
+  import { Net }  from './net.js';
 
-  // position: fixed внутри трансформированного <body> работает как
-  // position: absolute относительно body — размеры оверлеев получаются
-  // неверными (в вертикальной ориентации «Поверните телефон» сжимается
-  // до полоски). Переносим полноэкранные оверлеи в <html>, где transform
-  // отсутствует, — тогда fixed считается от вьюпорта.
-  ['orientation-overlay', 'card-overlay', 'tablet-overlay', 'deck-overlay', 'victory-overlay']
+  ['orientation-overlay','card-overlay','tablet-overlay','deck-overlay','victory-overlay',
+   'waiting-overlay']
     .forEach(id => {
       const el = document.getElementById(id);
       if (el) document.documentElement.appendChild(el);
     });
 
   const params = new URLSearchParams(location.search);
+  const wsUrl = params.get('ws')
+    || (location.protocol === 'https:' ? 'wss://' + location.host : 'ws://' + (location.host || 'localhost:8080'));
 
-  const seedParam = params.get('seed');
-  const seed = seedParam ? (parseInt(seedParam, 10) | 0) : (Date.now() | 0);
+  const online = params.has('room') || params.get('online') === '1';
 
-  // Состав команд: ?teams=il,adelaide,arna,jack|mite,urust,polina,igoram
-  const teamsParam = params.get('teams');
-  let teamConfig = null;
-  if (teamsParam) {
-    const [w, b] = teamsParam.split('|');
-    if (w && b) {
-      const wArr = w.split(',');
-      const bArr = b.split(',');
-      teamConfig = {
-        white: { captain: wArr[0], members: wArr.slice(1) },
-        black: { captain: bArr[0], members: bArr.slice(1) },
+  async function startLocal() {
+    const seedParam = params.get('seed');
+    const seed = seedParam ? (parseInt(seedParam, 10) | 0) : (Date.now() | 0);
+    const teamsParam = params.get('teams');
+    let teamConfig = null;
+    if (teamsParam) {
+      const [w, b] = teamsParam.split('|');
+      if (w && b) teamConfig = {
+        white: { captain: w.split(',')[0], members: w.split(',').slice(1) },
+        black: { captain: b.split(',')[0], members: b.split(',').slice(1) },
+      };
+    }
+    let shuffleTeams = false;
+    try { shuffleTeams = sessionStorage.getItem('ultimatum_shuffle_teams') === '1'; } catch {}
+
+    const game = new Game({ seed, teamConfig, shuffleTeams });
+    const view = new View();
+    await view.init();
+    view.setGame(game);
+
+    window.game = game; window.view = view;
+
+    document.getElementById('victory-restart').onclick = () => {
+      try {
+        sessionStorage.removeItem('reconnectRoom');
+        sessionStorage.removeItem('reconnectId');
+        sessionStorage.removeItem('reconnectName');
+      } catch {}
+      location.reload();
+    };
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
+        try { sessionStorage.setItem('ultimatum_shuffle_teams','1'); } catch {}
+        location.reload();
+      }
+    });
+  }
+
+  async function startOnline({ name, roomCode, reconnectId, quickMatch }) {
+    // ★ Seed здесь не имеет значения: фактическое состояние партии
+    //   формирует сервер и присылает в welcome/roomReady, а
+    //   _rehydrate() → _restore() затирает всё, что мы бы ни
+    //   насочиняли локально. Локальная new Game() нужна только
+    //   как «пустой скелет» под view.setGame, пока серверный
+    //   state не пришёл.
+    const game = new Game();
+    const view = new View();
+    await view.init();
+    view.setGame(game);
+
+    const net = new Net(wsUrl, game);
+    view.setNet(net);
+
+    // Храним имена подключённых игроков.
+    const roomPlayers = { white: null, black: null };
+    const roomDisconnected = { white: false, black: false };
+
+    // ★ Все обработчики вешаем ДО подключения. Иначе welcome,
+    //   прилетевший раньше, чем мы успели назначить onWelcome,
+    //   тихо теряется — и пре-лобби не показывается.
+    net.onQueueWaiting = () => {
+      const st = document.getElementById('lobby-search-status');
+      if (st) st.textContent = '';
+    };
+    net.onQueueCancelled = () => {
+      const formPanel = document.getElementById('lobby-form-panel');
+      const searchPanel = document.getElementById('lobby-search-panel');
+      if (formPanel) formPanel.classList.remove('hidden');
+      if (searchPanel) searchPanel.classList.add('hidden');
+      const st = document.getElementById('lobby-status');
+      if (st) st.textContent = '';
+    };
+
+    net.onWelcome = (msg) => {
+      document.getElementById('lobby-overlay').classList.add('hidden');
+      document.getElementById('lobby-status').textContent = '';
+
+      try {
+        sessionStorage.setItem('reconnectRoom', msg.roomCode);
+        sessionStorage.setItem('reconnectId', msg.yourId);
+        sessionStorage.setItem('reconnectName', msg.yourName);
+      } catch {}
+
+      // Игра ещё не началась — экран ожидания второго игрока.
+      if (msg.started === false) {
+        const wo = document.getElementById('waiting-overlay');
+        const panel = wo && wo.querySelector('.waiting-panel');
+        const codeEl = document.getElementById('waiting-code');
+        const p1 = document.getElementById('waiting-player-1');
+        const p2 = document.getElementById('waiting-player-2');
+        if (panel) panel.classList.remove('starting');
+        if (codeEl) codeEl.textContent = msg.roomCode || '—';
+        const names = (msg.players || []).map(p => p.name);
+        if (p1) p1.textContent = names[0] || msg.yourName || '—';
+        if (p2) p2.textContent = names[1] || 'Ожидание…';
+        if (wo) wo.classList.remove('hidden');
+        return;
+      }
+
+      // Реконнект в уже начатую игру или вход зрителем.
+      document.getElementById('waiting-overlay').classList.add('hidden');
+      if (msg.players) {
+        msg.players.forEach(p => {
+          if (p.side === 'white' || p.side === 'black') {
+            roomPlayers[p.side] = p.name;
+            roomDisconnected[p.side] = false;
+          }
+        });
+      }
+      if (view.setPlayerNames) view.setPlayerNames(roomPlayers);
+      if (view.setMySide) view.setMySide(msg.yourSide);
+      view.syncFromGame();
+    };
+
+    net.onRoomReady = (msg) => {
+      // ★ Игра стартовала. Прячем и пре-лобби, и оверлей лобби —
+      //   в быстрой игре onWelcome не вызывается (там welcome был
+      //   промежуточный от room.join), так что скрывать lobby-overlay
+      //   больше некому. Здесь же на всякий случай возвращаем форму
+      //   лобби в исходное состояние — на случай, если игрок после
+      //   партии вернётся.
+      const lobby = document.getElementById('lobby-overlay');
+      if (lobby) lobby.classList.add('hidden');
+      const formPanel = document.getElementById('lobby-form-panel');
+      const searchPanel = document.getElementById('lobby-search-panel');
+      if (formPanel) formPanel.classList.remove('hidden');
+      if (searchPanel) searchPanel.classList.add('hidden');
+
+      try {
+        sessionStorage.setItem('reconnectRoom', msg.roomCode);
+        sessionStorage.setItem('reconnectId', msg.yourId);
+        sessionStorage.setItem('reconnectName', msg.yourName);
+      } catch {}
+	  
+      if (msg.players) {
+        msg.players.forEach(p => {
+          if (p.side === 'white' || p.side === 'black') {
+            roomPlayers[p.side] = p.name;
+            roomDisconnected[p.side] = false;
+          }
+        });
+      }
+
+      // ★ Ники игроков пробрасываем во view до первого рендера,
+      //   чтобы все подписи сразу были в правильной форме.
+      if (view.setPlayerNames) view.setPlayerNames(roomPlayers);
+
+      // ★ ВАЖНО: до скрытия оверлея игру НЕ рендерим. Иначе анимация
+      //   раздачи карт проиграется под оверлеем, и к моменту, когда
+      //   игрок увидит поле, рука будет уже разложена.
+      //   Фиксируем только свою сторону — это просто поле, без
+      //   перерисовки, и его читают _canControl/_renderHands.
+      view.mySide = (msg.yourSide === 'white' || msg.yourSide === 'black')
+        ? msg.yourSide
+        : null;
+
+      const wo = document.getElementById('waiting-overlay');
+      const panel = wo && wo.querySelector('.waiting-panel');
+      const whiteP = (msg.players || []).find(p => p.side === 'white');
+      const blackP = (msg.players || []).find(p => p.side === 'black');
+      const wName = document.getElementById('starting-white-name');
+      const bName = document.getElementById('starting-black-name');
+      const wYou  = document.getElementById('starting-white-you');
+      const bYou  = document.getElementById('starting-black-you');
+      if (wName) wName.textContent = whiteP ? whiteP.name : '—';
+      if (bName) bName.textContent = blackP ? blackP.name : '—';
+      if (wYou)  wYou.textContent  = msg.yourSide === 'white' ? 'вы' : '';
+      if (bYou)  bYou.textContent  = msg.yourSide === 'black' ? 'вы' : '';
+      if (panel) panel.classList.add('starting');
+      if (wo) wo.classList.remove('hidden');
+
+      setTimeout(() => {
+        const wo2 = document.getElementById('waiting-overlay');
+        if (wo2) wo2.classList.add('hidden');
+        const p2 = wo2 && wo2.querySelector('.waiting-panel');
+        if (p2) p2.classList.remove('starting');
+
+        // ★ Оверлей скрылся — теперь рендерим игру. Анимация раздачи
+        //   карт стартует ровно в этот кадр, одновременно у обоих
+        //   игроков, без 3.5-секундного лага «карты уже раздались».
+        view.syncFromGame();
+      }, 3500);
+    };
+
+    net.onError = (message) => {
+      const formPanel = document.getElementById('lobby-form-panel');
+      const searchPanel = document.getElementById('lobby-search-panel');
+      if (formPanel) formPanel.classList.remove('hidden');
+      if (searchPanel) searchPanel.classList.add('hidden');
+      const st = document.getElementById('lobby-status');
+      if (st) st.textContent = '⚠ ' + message;
+    };
+    net.onDisconnect = () => {
+      const st = document.getElementById('lobby-status');
+      if (st) st.textContent = '⚠ Соединение потеряно, переподключаемся…';
+    };
+    net.onPlayerJoined = (side, name) => {
+      if (side === 'white' || side === 'black') {
+        roomPlayers[side] = name;
+        roomDisconnected[side] = false;
+        // ★ Игрок вернулся после реконнекта — обновляем подписи.
+        if (view.setPlayerNames) view.setPlayerNames(roomPlayers);
+        return;
+      }
+      if (name) {
+        const p2 = document.getElementById('waiting-player-2');
+        if (p2) {
+          p2.textContent = name;
+          const row = p2.closest('.waiting-player');
+          if (row) row.classList.remove('waiting-player-pending');
+        }
+      }
+    };
+    net.onPlayerLeft = (side, name, temporary) => {
+      if (side === 'white' || side === 'black') {
+        // ★ При временном отключении ник СОХРАНЯЕМ: игрок вернётся
+        //   в течение grace period. Если обнулить его — подписи
+        //   на секунду скатились бы обратно к «белые»/«чёрные»,
+        //   а потом снова к нику. Стираем имя только на окончательный
+        //   выход.
+        if (!temporary) roomPlayers[side] = null;
+        roomDisconnected[side] = !!temporary;
+        if (view.setPlayerNames) view.setPlayerNames(roomPlayers);
+        return;
+      }
+      if (name) {
+        const p2 = document.getElementById('waiting-player-2');
+        if (p2) {
+          p2.textContent = 'Ожидание…';
+          const row = p2.closest('.waiting-player');
+          if (row) row.classList.add('waiting-player-pending');
+        }
+      }
+    };
+
+    if (quickMatch) {
+      // ★ Быстрая игра: свой ручной WebSocket, потому что протокол
+      //   отличается (quickMatch → queueWaiting → roomReady), и
+      //   обычный Net.connect тут не подходит.
+      net._joinArgs = { name, reconnectId };
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const done = (fn, arg) => { if (!settled) { settled = true; fn(arg); } };
+
+        try { net.ws = new WebSocket(net.url); }
+        catch (e) { reject(e); return; }
+
+        net.ws.addEventListener('open', () => {
+          net.connected = true;
+          net._reconnectAttempts = 0;
+          net.ws.send(JSON.stringify({ type: 'quickMatch', name }));
+        });
+
+        net.ws.addEventListener('message', (e) => {
+          let msg; try { msg = JSON.parse(e.data); } catch { return; }
+          switch (msg.type) {
+            case 'welcome':
+              // ★ Промежуточный welcome от room.join. Экран ожидания
+              //   НЕ показываем — ждём roomReady. onWelcome не вызываем.
+              if (msg.yourSide) net.mySide = msg.yourSide;
+              net.myId = msg.yourId;
+              net.roomCode = msg.roomCode;
+              net.players = msg.players || [];
+              if (msg.state) net._rehydrate(msg.state);
+              break;
+            case 'roomReady':
+              net.mySide = msg.yourSide;
+              net.myId = msg.yourId;
+              net.roomCode = msg.roomCode;
+              net.players = msg.players || [];
+              if (msg.state) net._rehydrate(msg.state);
+              if (net.onRoomReady) net.onRoomReady(msg);
+              done(resolve, msg);
+              break;
+            case 'state':
+              net._rehydrate(msg.state);
+              if (net.onState) net.onState(msg.state);
+              break;
+            case 'events':
+              if (net.onAction) net.onAction({ ok: true, events: msg.events });
+              break;
+            case 'error':
+              console.warn('[net] server error:', msg.message);
+              if (net.onError) net.onError(msg.message, msg.actionKind);
+              done(reject, new Error(msg.message));
+              break;
+            case 'playerJoined':
+              if (net.onPlayerJoined) net.onPlayerJoined(msg.side, msg.name);
+              break;
+            case 'playerLeft':
+              if (net.onPlayerLeft) net.onPlayerLeft(msg.side, msg.name, !!msg.temporary);
+              break;
+            case 'queueWaiting':
+              if (net.onQueueWaiting) net.onQueueWaiting();
+              break;
+            case 'queueCancelled':
+              if (net.onQueueCancelled) net.onQueueCancelled();
+              done(reject, new Error('Поиск отменён'));
+              break;
+            case 'pong': break;
+          }
+        });
+
+        net.ws.addEventListener('close', () => {
+          net.connected = false;
+          if (net.onDisconnect) net.onDisconnect();
+        });
+
+        net.ws.addEventListener('error', () => {
+          done(reject, new Error('Не удалось подключиться'));
+        });
+      });
+    } else {
+      await net.connect({ roomCode, name, reconnectId });
+    }
+
+    window.game = game; window.view = view; window.net = net;
+
+    document.getElementById('victory-restart').onclick = () => {
+      net.close(); location.reload();
+    };
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'r' || e.key === 'R') && !e.repeat) location.reload();
+    });
+
+    // ★ Здесь НИКАКОГО повторного net.connect — подключение уже
+    //   выполнено выше (в ветке quickMatch или в ветке join).
+  }
+
+  function showStartupError(message) {
+    document.body.innerHTML = '';
+    const box = document.createElement('div');
+    box.style.cssText = [
+      'position:fixed', 'inset:0', 'display:flex',
+      'align-items:center', 'justify-content:center',
+      'background:#0a0a14', 'color:#eee',
+      'font-family:monospace', 'padding:24px',
+      'text-align:center', 'flex-direction:column', 'gap:16px',
+      'z-index:999999',
+    ].join(';');
+    const title = document.createElement('div');
+    title.textContent = '⚠ Не удалось запустить игру';
+    title.style.cssText = 'font-size:18px;font-weight:bold;color:#ff8888;';
+    const text = document.createElement('div');
+    text.textContent = message || 'Неизвестная ошибка';
+    text.style.cssText = 'font-size:13px;color:#aaa;max-width:520px;line-height:1.6;word-break:break-word;';
+    const hint = document.createElement('div');
+    hint.textContent = 'Проверьте интернет-соединение и перезагрузите страницу.';
+    hint.style.cssText = 'font-size:11px;color:#666;margin-top:8px;';
+    box.appendChild(title);
+    box.appendChild(text);
+    box.appendChild(hint);
+    document.body.appendChild(box);
+  }
+
+  if (!online) {
+    // ★ Оборачиваем в try/catch: если three.js не загрузился с CDN
+    //   (нет интернета у игрока, unpkg лежит, блокировка по региону)
+    //   или упала загрузка текстур в view.init() — раньше был
+    //   unhandled rejection и просто чёрный экран. Теперь показываем
+    //   внятное сообщение, по которому сразу понятно, что случилось.
+    try {
+      await startLocal();
+    } catch (err) {
+      console.error('[startLocal]', err);
+      showStartupError(err && err.message ? err.message : String(err));
+    }
+  } else {
+    // ★ Пробуем авто-реконнект: если в этой вкладке уже была активная
+    //   сессия (мы сохраняли её в sessionStorage при welcome),
+    //   подключаемся сразу — без лобби и без кода комнаты.
+    let autoRoom = null, autoId = null, autoName = null;
+    try {
+      autoRoom = sessionStorage.getItem('reconnectRoom');
+      autoId   = sessionStorage.getItem('reconnectId');
+      autoName = sessionStorage.getItem('reconnectName');
+    } catch {}
+
+    const urlRoom = (params.get('room') || '').toUpperCase();
+    const wantReconnect = autoRoom && autoId && (!urlRoom || urlRoom === autoRoom);
+
+    let reconnected = false;
+    if (wantReconnect) {
+      document.getElementById('lobby-overlay').classList.add('hidden');
+      try {
+        await startOnline({ name: autoName || 'Игрок', roomCode: autoRoom, reconnectId: autoId });
+        reconnected = true;
+      } catch (e) {
+        try {
+          sessionStorage.removeItem('reconnectRoom');
+          sessionStorage.removeItem('reconnectId');
+          sessionStorage.removeItem('reconnectName');
+        } catch {}
+        document.getElementById('lobby-overlay').classList.remove('hidden');
+        const st = document.getElementById('lobby-status');
+        if (st) st.textContent = '⚠ ' + (e.message || 'Не удалось переподключиться. Войдите заново.');
+      }
+    }
+
+    if (!reconnected) {
+      const lobby = document.getElementById('lobby-overlay');
+      lobby.classList.remove('hidden');
+
+      // Если в URL был ?room=XXXX — подставим в поле, чтобы не вводить вручную.
+      const lobbyCodeInput = document.getElementById('lobby-code');
+      if (lobbyCodeInput && urlRoom) lobbyCodeInput.value = urlRoom;
+
+      document.getElementById('lobby-connect').onclick = async () => {
+        // ★ Явный вход — стираем прошлую сессию, чтобы не тянуть её за собой.
+        try {
+          sessionStorage.removeItem('reconnectRoom');
+          sessionStorage.removeItem('reconnectId');
+          sessionStorage.removeItem('reconnectName');
+        } catch {}
+        const name = document.getElementById('lobby-name').value.trim() || 'Игрок';
+        const roomCode = document.getElementById('lobby-code').value.trim().toUpperCase();
+        document.getElementById('lobby-status').textContent = 'Подключение…';
+        try {
+          await startOnline({ name, roomCode });
+        } catch (e) {
+          document.getElementById('lobby-status').textContent = '⚠ ' + e.message;
+        }
+      };
+
+      document.getElementById('lobby-quick').onclick = async () => {
+        try {
+          sessionStorage.removeItem('reconnectRoom');
+          sessionStorage.removeItem('reconnectId');
+          sessionStorage.removeItem('reconnectName');
+        } catch {}
+        const name = document.getElementById('lobby-name').value.trim() || 'Игрок';
+
+        // ★ Прячем форму, показываем «поиск игрока».
+        const formPanel = document.getElementById('lobby-form-panel');
+        const searchPanel = document.getElementById('lobby-search-panel');
+        formPanel.classList.add('hidden');
+        searchPanel.classList.remove('hidden');
+        document.getElementById('lobby-search-status').textContent = '';
+
+        try {
+          await startOnline({ name, quickMatch: true });
+        } catch (e) {
+          // Не получилось — возвращаем форму.
+          formPanel.classList.remove('hidden');
+          searchPanel.classList.add('hidden');
+          document.getElementById('lobby-status').textContent = '⚠ ' + e.message;
+        }
+      };
+
+      document.getElementById('lobby-cancel').onclick = () => {
+        if (window.net && typeof window.net.cancelQuickMatch === 'function') {
+          window.net.cancelQuickMatch();
+        }
       };
     }
   }
-
-  // Перемешивание — только если игрок нажал «Заново» (ставит флаг ниже).
-  let shuffleTeams = false;
-  try { shuffleTeams = sessionStorage.getItem('ultimatum_shuffle_teams') === '1'; } catch {}
-
-  const game = new Game({ seed, teamConfig, shuffleTeams });
-  const view = new View();
-  await view.init();
-  view.setGame(game);
-
-  // Кнопка «Начать заново» и R — ставим флаг, чтобы в следующий раз команды перемешались.
-  function restartWithShuffle() {
-    try { sessionStorage.setItem('ultimatum_shuffle_teams', '1'); } catch {}
-    location.reload();
-  }
-  window.restartWithShuffle = restartWithShuffle;
-
-  window.addEventListener('keydown', (e) => {
-    if ((e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') && !e.repeat) {
-      restartWithShuffle();
-    }
-  });
-
-  document.getElementById('victory-restart').onclick = restartWithShuffle;
-
-  window.game = game;
-  window.view = view;
-  console.log('🎮 Игра запущена. seed =', seed, '| shuffle =', shuffleTeams);
 </script>
 </body>
 </html>

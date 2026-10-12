@@ -31,6 +31,20 @@ const LOCATION_BONUS_POSITIONS = {
 };
 const LOCATION_ORDINALS = { 1:'первой', 2:'второй', 4:'четвёртой', 5:'пятой' };
 
+// ★ Позиции плашек «чья локация» в пикселях исходной картинки (4080×1397).
+//   Это середина между позициями кнопок бонусов белых и чёрных для
+//   соответствующей ФИЗИЧЕСКОЙ локации, y — под нижними клетками,
+//   выше кнопок бонусов (у кнопок y=1220).
+//   Ключ — физический id локации из LOCATION_CELLS. Локация 3 (центр)
+//   тоже сюда входит: у неё нет кнопки бонуса, поэтому подсветка
+//   владения там будет видна практически всегда.
+const LOCATION_INFLUENCE_POSITIONS = {
+  1: { x: 505,  y: 1150 },
+  2: { x: 1270, y: 1150 },
+  3: { x: 2040, y: 1150 },
+  4: { x: 2810, y: 1150 },
+  5: { x: 3575, y: 1150 },
+};
 // ★ Цвет кольца «убийственного» пузырька могущества — того, который
 //   довёл могущество жертвы до 0. Меняется в одном месте; см. также
 //   функцию getKillerRingColor ниже. Обычные пузырьки используют
@@ -52,8 +66,46 @@ const MIRROR_BADGE_SIZE = 0.60;
 const MIRROR_BADGE_OFFSET_Z = 0.6;
 const MIRROR_BADGE_HEIGHT = 0.35;
 const MIRROR_BADGE_TILT_DEG = 20;
-const MIRROR_SHIMMER_INTERVAL = 4.0;
-const MIRROR_SHIMMER_DURATION = 1.4;
+
+// ★ Период пульсации — совпадает с общим ритмом интерфейса
+//   (кнопки действий, кнопки бонусов, подсветка руки). Используется
+//   только в _startRenderLoop: от него считается фаза --pulse.
+const MIRROR_PULSE_PERIOD = 1.6;
+
+// ★ Оригинальный эффект зерцала — «пробегающий блик» поверх бейджа.
+//   Текстура-«молния» (диагональный линейный градиент) проезжает
+//   по плоскости каждые MIRROR_SHIMMER_INTERVAL секунд, сам проезд
+//   занимает MIRROR_SHIMMER_DURATION. У каждого зерцала свой
+//   случайный phaseOffset — поле не мигает синхронно.
+const MIRROR_SHIMMER_INTERVAL = 8.0;   // было 4.0
+const MIRROR_SHIMMER_DURATION = 2.4;   // было 1.4
+
+// ★ Цвет «космоса» вокруг поля. Медленно перетекает в цвет команды,
+//   чей сейчас ход: тёплый тёмно-красный — белые, тёмно-янтарный —
+//   чёрные. Достаточно тёмный, чтобы звёзды и поле читались, но
+//   игрок краем глаза чувствует, кто сейчас действует. В такт
+//   общему ритму (--pulse) цвет ещё и слегка пульсирует яркостью.
+const AMBIENT_TINT = {
+  neutral: new THREE.Color(0x000000),
+  white:   new THREE.Color(0x992233),
+  black:   new THREE.Color(0x997033),
+};
+
+// ★ Буквенно-цифровые метки ячеек для оверлея Shift / 3-пальца.
+//   Ключ — cell.id из BOARD, значение — то, что рисуется на экране.
+//   Не путать с LOCATION_CELLS / CELL_TO_BASE_LOCATION: там числа —
+//   это идентификаторы клеток, а здесь — их подписи для игрока.
+const CELL_LABELS = {
+  1:  'H1', 2:  'H2',
+  3:  'A3', 4:  'B4', 5:  'C5',
+  6:  'A6', 7:  'C2', 8:  'B1', 9:  'B7',
+  10: 'A1', 11: 'C1',
+  12: 'A2', 13: 'B2', 14: 'B3',
+  15: 'C3', 16: 'C4',
+  17: 'A4', 18: 'A5',
+  19: 'B5', 20: 'B6', 21: 'C6',
+  22: 'A7', 23: 'C7',
+};
 
 const HEARTS_LAYOUT_DEFAULT = { topPercent: 82.805, leftPercent: 6.47, slotWidthPercent: 10, gapPercent: 1, count: 8 };
 const HEARTS_LAYOUTS = {};
@@ -165,9 +217,14 @@ function createShapeTexture(shape, fillColor, ringColor, opts = {}) {
   ctx.strokeStyle = colorToRgba(ringColor, ringAlpha);
   ctx.lineWidth = ringWidth; ctx.lineJoin = 'round'; ctx.stroke(); ctx.restore();
   const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+
+
+// ============================================================
+// Меш фигур
+// ============================================================
 
 function createDashedRingTexture(colorHex, opts = {}) {
   const S = 256, c = document.createElement('canvas');
@@ -450,7 +507,7 @@ function createOrbSprite(colorCss, iconImage, opts = {}) {
 
   // Внешнее мягкое свечение.
   const grad = ctx.createRadialGradient(cx, cy, r*0.5, cx, cy, r);
-  grad.addColorStop(0, 'rgba(255,255,255,0.65)');
+  grad.addColorStop(0, 'rgba(255,255,255,0.30)');
   grad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.save(); shapePath(r); ctx.fillStyle = grad; ctx.fill(); ctx.restore();
 
@@ -555,6 +612,11 @@ export class View {
     };
 
     this.extrasVisible = false;
+    this.mySide = null;
+
+    // ★ Ники игроков в мультиплеере. null — фича отключена,
+    //   во всех подписях используется «белые»/«чёрные».
+    this.playerNames = { white: null, black: null };
 
     this.pieceMeshes = new Map();
     this.captainMeshes = { white: null, black: null };
@@ -591,6 +653,30 @@ export class View {
     this.revealCardElements = [];
     this.fsRequested = false;
 
+    // ★ Номера ячеек. Показываются при ЛЮБОМ из двух условий:
+    //   — зажат Shift (десктоп) или 3+ пальца (тач) → временный показ;
+    //   — включён тумблер-кнопкой в #local-toggles → постоянный показ.
+    //   Держим отдельные элементы в cellLabelElements, чтобы
+    //   не пересоздавать DOM на каждый показ.
+    this._cellLabelsVisible = false;
+    this._cellLabelsShiftOn = false;    // временный показ (жест)
+    this._cellLabelsToggleOn = false;   // постоянный показ (кнопка)
+    this.cellLabelElements = new Map();
+
+    // ★ Плашки «чья локация» под каждой из 5 локаций. Пересчитываются
+    //   при каждом renderAll (динамически) и при движении камеры.
+    //   Симметрично номерам ячеек: два независимых источника видимости
+    //   (Shift и тумблер ◆), итог — OR.
+    this.locationInfluenceHighlights = new Map();
+    this._locationInfluenceVisible = false;      // итоговая видимость
+    this._locationInfluenceShiftOn = false;      // временный показ (жест)
+    this._locationInfluenceToggleOn = false;     // постоянный показ (кнопка)
+
+    // Кэш предыдущих значений disabled / end-turn-locked для кнопки
+    // завершения хода, чтобы не трогать DOM каждый кадр.
+    this._lastEndTurnBlocked = null;
+    this._lastEndTurnLockedLook = null;
+
     // ★ Защита от даблклика по кнопке «Подготовка к завершению хода»,
     //   пока идёт последовательный возврат карт вскрытия (2 resolve'а
     //   с задержкой 120 мс). Явно объявлен, чтобы не полагаться на
@@ -619,6 +705,20 @@ export class View {
     //   предсказание точное. При прилёте счётчик уменьшается
     //   (см. _updatePowerOrbs).
     this._pendingMightLoss = { white: 0, black: 0 };
+
+    // ★ Состояние плашки бонуса второй локации в мультиплеере.
+    //   Плашка живёт в три этапа: (1) старт — «Вскрыто N карт»,
+    //   (2) первый resolve — «Вернул в колоду [карта]»,
+    //   (3) второй resolve — «Вернул в колоду [карта] и Сбросил [карта]».
+    //   Здесь копим промежуточные результаты, чтобы не терять их
+    //   между двумя action'ами сервера.
+    this._bonus2Banner = null;
+
+    // ★ Накопитель плашки ручного сброса. Если игрок жмёт «сбросить
+    //   карту» несколько раз подряд, собираем все его карты в одну
+    //   плашку (до 4 штук). Любое другое действие или смена хода
+    //   сбрасывают накопитель.
+    this._discardBanner = null;
 
     // Слой для ghost-карт (анимации полёта карт между UI-элементами).
     this.flyLayer = document.getElementById('fly-cards-layer');
@@ -656,12 +756,105 @@ export class View {
       this.syncFromGame();
     }
   }
+  
+  setMySide(side) {
+    this.mySide = (side === 'white' || side === 'black') ? side : null;
+    this.renderAll();
+  }
+
+  // ★ Установка ников для подписей. Принимает объект вида
+  //   { white: 'Иван', black: 'Пётр' }. Любое значение можно
+  //   оставить null/пустым — для этой стороны будет фолбэк
+  //   на «белые»/«чёрные».
+  setPlayerNames(names) {
+    if (names) {
+      this.playerNames.white = (names.white && String(names.white).trim()) || null;
+      this.playerNames.black = (names.black && String(names.black).trim()) || null;
+    } else {
+      this.playerNames.white = null;
+      this.playerNames.black = null;
+    }
+    this.renderAll();
+  }
+
+  // ★ Родительный падеж для подписей «Ход …», «Рука …», «Сброс …»,
+  //   «Колода …», «Победа …». В мультиплеере — ник (он не склоняется),
+  //   в одиночке — «белых»/«чёрных».
+  _sideGenitive(side) {
+    const name = this.playerNames[side];
+    if (name) return name;
+    return side === 'white' ? 'белых' : 'чёрных';
+  }
+
+  // ★ Форма для плашек владения локациями («◆ БЕЛЫЕ 3 : 2»).
+  //   В мультиплеере — ник игрока как есть (без принудительного
+  //   верхнего регистра — «◆ Иван» читается лучше, чем «◆ ИВАН»).
+  //   В одиночке — «БЕЛЫЕ»/«ЧЁРНЫЕ» капсом, как было изначально.
+  _sideNominativeCaps(side) {
+    const name = this.playerNames[side];
+    if (name) return name;
+    return side === 'white' ? 'БЕЛЫЕ' : 'ЧЁРНЫЕ';
+  }
+
+  _isMySide(side) {
+    return this.mySide == null || this.mySide === side;
+  }
+
+  // Можно ли сейчас этому клиенту управлять стороной `side`.
+  // В одиночной игре (mySide === null) — всегда да.
+  // В мультиплеере — только своей стороной и только когда её ход.
+  _canControl(side) {
+    if (!this.mySide) return true;
+    return this.mySide === side && this.game && this.game.currentTurn === side;
+  }
 
   setNet(net) {
     this.net = net;
     if (net) {
       net.onAction = (result) => {
-        if (result.ok) this.playEvents(result.events || []);
+        if (!result.ok) return;
+        const events = result.events || [];
+
+        // ★ Локально помечаем действие совершённым, не дожидаясь
+        //   отдельного state-сообщения от сервера. Причина:
+        //   сервер шлёт events раньше, чем state. Пока state не
+        //   прилетит, game.actionTakenThisTurn на клиенте остаётся
+        //   false — и _renderLocationBonusButtons (вызывается ниже
+        //   из syncFromGame) считает, что бонусы локаций ещё
+        //   доступны. Кнопки бонусов висят поверх анимации до тех
+        //   пор, пока не приедет state и не перезапишет поле.
+        //   А так как во время анимации net.onState уходит в
+        //   _pendingStateSync, кнопки ждут ещё и конца анимации.
+        //   Правка закрывает эту дыру: поле становится true сразу
+        //   же. Когда state от сервера долетит — он перезапишет
+        //   его тем же значением, конфликта не будет.
+        if (this.game && this.game.actionTakenThisTurn) {
+          for (const ev of events) {
+            if ((ev.kind === 'cardPlayed' || ev.kind === 'cardDiscarded')
+                && ev.side) {
+              this.game.actionTakenThisTurn[ev.side] = true;
+            }
+          }
+        }
+
+        // ★ Ghost-анимация карт в мультиплеере.
+        //   Локальный dispatch() в сетевом режиме не проходит — он
+        //   отдаёт action серверу и выходит, не запуская полёт.
+        //   Поэтому ловим момент прихода событий: state от сервера
+        //   придёт отдельным сообщением ПОЗЖЕ, значит прямо сейчас
+        //   DOM ещё показывает карту в руке. Захватываем позицию,
+        //   обрабатываем события, и после syncFromGame запускаем
+        //   полёт в сброс (или к бейджу зерцала).
+        const flyItems = this._captureFlyForEvents(events);
+
+        this.playEvents(events);
+
+        for (const item of flyItems) {
+          this._launchFlyForAction(item.ctx, item.action);
+        }
+
+        // ★ Собираем и показываем плашку действий оппонента.
+        this._handleActionBanner(events);
       };
       net.onState = () => {
         // ★ Если играет анимация или ждут события — не сношаем сцену.
@@ -673,8 +866,82 @@ export class View {
           return;
         }
         this.syncFromGame();
+        // ★ Перерисовываем график победы, если state с gameOver
+        //   прилетел после того, как _showVictory уже нарисовал
+        //   график по усечённой истории. Идемпотентно — если ничего
+        //   не изменилось, просто перерисует то же самое.
+        if (this.game && this.game.gameOver) {
+          this._drawVictoryGraph();
+        }
       };
     }
+  }
+  
+    // ★ Собирает ghost-контексты для событий, по которым карта уходит
+  //   из руки в сброс (или к бейджу зерцала). Нужно только в мульти-
+  //   плеере — в одиночке этим занимается dispatch(). Не читает и не
+  //   мутирует game; только DOM.
+  _captureFlyForEvents(events) {
+    const out = [];
+    if (!events || !events.length) return out;
+
+    for (const ev of events) {
+      let card = null;
+      let action = null;
+
+      if (ev.kind === 'cardPlayed') {
+        // cardPlayed — это и move, и attack, и explore, и spell,
+        // и отправка в зерцало (mode='mirror'). Различаем по наличию
+        // mirrorAttached с тем же uid карты.
+        card = ev.card;
+        const mirrorEv = events.find(
+          e => e.kind === 'mirrorAttached'
+            && e.card && card && e.card.uid === card.uid
+        );
+        action = mirrorEv
+          ? { kind: 'playCard', mode: 'mirror', targetPieceId: mirrorEv.ownerId }
+          : { kind: 'playCard', mode: 'move' }; // mode не важен, кроме mirror
+      } else if (ev.kind === 'cardDiscarded') {
+        card = ev.card;
+        action = { kind: 'discard' };
+      } else if (ev.kind === 'locationBonus1Applied') {
+        card = ev.discarded;
+        action = { kind: 'locationBonus1' };
+      } else if (ev.kind === 'locationBonus4Applied') {
+        // ★ Карта, уходящая из руки в сброс, должна улетать ghost'ом
+        //   в сброс — так же, как в одиночке (там это делает
+        //   _captureFlyForAction в dispatch). Событие несёт обе карты:
+        //   handCard (уходит из руки) и discardCard (приходит в руку,
+        //   её анимирует _animateBonus4 отдельно).
+        card = ev.handCard;
+        action = { kind: 'locationBonus4' };
+      } else {
+        // locationBonus2Started/Resolved, deckReshuffled — у них
+        // свои анимации, ghost здесь не нужен.
+        continue;
+      }
+
+      if (!card || !ev.side) continue;
+      const ctx = this._captureFlyForCard(ev.side, card);
+      if (ctx) out.push({ ctx, action });
+    }
+    return out;
+  }
+
+  // ★ Ищет DOM-элемент карты в руке по uid и возвращает контекст для
+  //   ghost-анимации: { side, uid, card, fromRect }. Ничего в игре
+  //   не меняет.
+  _captureFlyForCard(side, card) {
+    if (!side || !card || !card.uid) return null;
+    const container = side === 'white' ? this.refs.whiteHandSlots : this.refs.blackHandSlots;
+    if (!container) return null;
+    let el = null;
+    Array.from(container.children).forEach(c => {
+      if (c.dataset && c.dataset.uid === card.uid) el = c;
+    });
+    if (!el) return null;
+    const fromRect = this._bodyRectOf(el);
+    return { side, uid: card.uid, card, fromRect };
   }
 
   dispatch(action) {
@@ -818,6 +1085,10 @@ export class View {
       }
     }
 
+    // ★ Общая текстура-«молния» для пробегающего блика на зерцалах.
+    //   Диагональный линейный градиент: узкая белая полоса посередине,
+    //   плавно затухающая к краям. В _startRenderLoop мы двигаем её
+    //   через map.offset.x, чтобы полоса «проезжала» по бейджу.
     const c = document.createElement('canvas');
     c.width = 512; c.height = 512;
     const ctx = c.getContext('2d');
@@ -930,6 +1201,40 @@ export class View {
     board.rotation.x = -Math.PI / 2;
     board.receiveShadow = true;
     this.floatGroup.add(board);
+
+    // ★ Мягкий ореол вокруг доски в цвет активной команды.
+    //   Плоскость с радиальным градиентом, лежит чуть ниже доски,
+    //   аддитивное смешивание: цвет прибавляется к фону, гаснет
+    //   к краям. На месте самой доски ореол перекрыт ею сверху,
+    //   так что видно только свечение ВОКРУГ доски.
+    const auraCanvas = document.createElement('canvas');
+    auraCanvas.width = 512;
+    auraCanvas.height = 512;
+    const actx = auraCanvas.getContext('2d');
+    const grd = actx.createRadialGradient(256, 256, 30, 256, 256, 240);
+    grd.addColorStop(0.00, 'rgba(255,255,255,0.22)');
+    grd.addColorStop(0.45, 'rgba(255,255,255,0.10)');
+    grd.addColorStop(1.00, 'rgba(255,255,255,0)');
+    actx.fillStyle = grd;
+    actx.fillRect(0, 0, 512, 512);
+    const auraTex = new THREE.CanvasTexture(auraCanvas);
+    auraTex.colorSpace = THREE.SRGBColorSpace;
+
+    this.auraPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(BOARD_WIDTH * 2.8, BOARD_HEIGHT * 4.6),
+      new THREE.MeshBasicMaterial({
+        map: auraTex,
+        color: 0x000000,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+      })
+    );
+    this.auraPlane.rotation.x = -Math.PI / 2;
+    this.auraPlane.position.set(0, -0.6, 0);
+    this.auraPlane.renderOrder = -10;
+    this.scene.add(this.auraPlane);
 
     this.clickTargets = [];
     BOARD.forEach(p => {
@@ -1079,6 +1384,24 @@ export class View {
     const oz = 9 / z;
     this.camera.position.set(tx, oy, tz + oz);
     this.camera.lookAt(tx, 0, tz);
+
+    // Позиции экранных DOM-элементов, привязанных к мировым точкам
+    // (кнопки бонусов локаций, карты вскрытия), зависят от камеры.
+    // Обновляем их здесь — при смене камеры, а не каждый кадр.
+    if (this.game && this.refs && this.locationBonusButtons) {
+      this._projectLocationBonusButtons();
+      if (this.revealCardElements.length > 0 && this.game.revealState.active) {
+        this._positionRevealCards(this.game.revealState.side);
+      }
+    }
+    // ★ Номера ячеек привязаны к мировым координатам — пересчитываем
+    //   их при любом сдвиге/зуме камеры и при ресайзе окна.
+    if (this._cellLabelsVisible) this._projectCellLabels();
+    // ★ Плашки владения локациями тоже привязаны к мировым точкам.
+    this._projectLocationInfluenceHighlights();
+    // ★ Три локальных тумблера привязаны к левому-дальнему углу
+    //   доски — двигаются вместе с полем при зуме и пане.
+    this._projectLocalToggles();
   }
 
   // ★ Ограничивает пан, чтобы не уехать за пределы доски. При zoom = 1
@@ -1312,8 +1635,21 @@ export class View {
     this._hideLocationPanel();
 
     if (!fromRect || fromRect.width <= 0) {
-      // Не смогли измерить сброс — просто раскрываем карту.
-      this._suppressHandAnimUids.delete(newHandCard.uid);
+      // Не смогли измерить сброс — раскроем карту в руке вручную,
+      // иначе она останется невидимой. _suppressHandAnimUids уже
+      // удалит карта при первом рендере руки.
+      requestAnimationFrame(() => {
+        const container = side === 'white' ? this.refs.whiteHandSlots : this.refs.blackHandSlots;
+        let el = null;
+        Array.from(container.children).forEach(c => {
+          if (c.dataset && c.dataset.uid === newHandCard.uid) el = c;
+        });
+        if (el) {
+          el.style.transition = 'none';
+          el.style.opacity = '1';
+          requestAnimationFrame(() => { el.style.transition = ''; });
+        }
+      });
       return;
     }
 
@@ -1323,10 +1659,17 @@ export class View {
       Array.from(container.children).forEach(c => {
         if (c.dataset && c.dataset.uid === newHandCard.uid) el = c;
       });
-      if (!el) { this._suppressHandAnimUids.delete(newHandCard.uid); return; }
+      // ★ Элемента нет — fallback-таймер в _renderHandFor уже раскроет
+      //   карту через 1.2 с.
+      if (!el) return;
 
       const toRect = this._bodyRectOf(el);
-      if (!toRect || toRect.width <= 0) { el.style.opacity = '1'; return; }
+      if (!toRect || toRect.width <= 0) {
+        el.style.transition = 'none';
+        el.style.opacity = '1';
+        requestAnimationFrame(() => { el.style.transition = ''; });
+        return;
+      }
 
       this._flyCard(fromRect, toRect, newHandCard, {
         side,
@@ -1398,20 +1741,25 @@ export class View {
     }
     const fromRect = fromEl ? this._bodyRectOf(fromEl) : null;
 
-    // ★ Точечно убираем этот эл. из слоя вскрытых и из массива.
-    //   Никакого _renderLocation2Panel с полной перерисовкой панели —
-    //   именно она тормозила основной поток настолько, что первый
-    //   ghost успевал «дождаться» второго. В обычном одиночном
-    //   возврате разница незаметна, а в end-turn с двумя картами
-    //   подряд — критична.
-    if (fromEl && fromEl.parentNode) fromEl.parentNode.removeChild(fromEl);
-    this.revealCardElements = this.revealCardElements.filter(el => el !== fromEl);
+    // ★ НЕ удаляем элемент из DOM и из revealCardElements сразу.
+    //   Сервер шлёт events РАНЬШЕ, чем state, и до прихода state
+    //   game.revealState.cards ещё содержит только что разрешённую
+    //   карту. Если удалить эл. сейчас, _syncLocation2Panel решит,
+    //   что карты не хватает, и создаст её заново — визуально
+    //   карта «вернётся» и потом снова исчезнет. Поэтому просто
+    //   помечаем эл. как resolved: _positionRevealCards его
+    //   пропускает, а реальное удаление произойдёт в
+    //   _syncRevealCardsUids по приходу state.
+    if (fromEl) fromEl.dataset.resolved = '1';
 
     // ★ Обновляем только кнопочный список и переставляем оставшиеся
-    //   карты вскрытия. Слой `revealLayer` НЕ пересоздаём — иначе
-    //   оставшиеся карты визуально прыгнули бы на новые позиции.
+    //   карты вскрытия. Слой `revealLayer` НЕ пересоздаём.
+    //   _renderLocation2ButtonsOnly снимает hidden с панели кнопок,
+    //   поэтому у оппонента её не вызываем.
     if (this.game.revealState.active) {
-      this._renderLocation2ButtonsOnly();
+      if (this._isMySide(side)) {
+        this._renderLocation2ButtonsOnly();
+      }
       if (this.revealCardElements.length > 0) {
         this._positionRevealCards(side);
       }
@@ -1519,6 +1867,12 @@ export class View {
       blackPlayed: $('black-played'),
       whiteHandHeader: $('white-hand-header'),
       blackHandHeader: $('black-hand-header'),
+      whiteHandStatus: $('white-hand-status'),
+      blackHandStatus: $('black-hand-status'),
+      whiteHandLabel: $('white-hand-label'),
+      blackHandLabel: $('black-hand-label'),
+      whiteDiscardLabel: $('white-discard-label'),
+      blackDiscardLabel: $('black-discard-label'),
 
       whiteDeck: $('white-deck'),
       blackDeck: $('black-deck'),
@@ -1533,6 +1887,7 @@ export class View {
       turnLabel: $('turn-label'),
       turnNumber: $('turn-number'),
       endTurnBtn: $('end-turn'),
+      waitingIndicator: $('waiting-indicator'),
 
       endTurnConfirm: $('end-turn-confirm'),
       etcConfirmBtn: $('etc-confirm'),
@@ -1579,10 +1934,17 @@ export class View {
       b2cConfirmBtn: $('b2c-confirm'),
 
       locationBonusContainer: $('location-bonuses'),
+      actionBanner: $('action-banner'),
       mirrorFieldReminders: $('mirror-field-reminders'),
       discardDim: $('discard-dim-overlay'),
       discardPickBtn: $('discard-pick-btn'),
       revealLayer: $('reveal-cards-layer'),
+      cellLabelsLayer: $('cell-labels-layer'),
+      locationInfluenceContainer: $('location-influence-highlights'),
+      localToggleContainer: $('local-toggles'),
+      localToggleCell: $('local-toggle-cell'),
+      localToggleLoc: $('local-toggle-loc'),
+      localToggleExtras: $('local-toggle-extras'),
     };
     this.refs.lbpTitle = this.refs.locationBonusPanel.querySelector('.lbp-title');
     this.refs.lbpSub = this.refs.locationBonusPanel.querySelector('.lbp-sub');
@@ -1608,6 +1970,18 @@ export class View {
     this._updateEndTurnPanel();
     this._updateMirrorFieldReminders();
     this._updateMirrorShimmerDimming();
+    // ★ Панель вскрытия (бонус 2) — единая точка синхронизации с
+    //   game.revealState. В онлайне событие locationBonus2Started
+    //   приходит РАНЬШЕ, чем state, и _renderLocation2Panel по
+    //   проверке game.revealState.active себя отменяет. Здесь мы
+    //   приводим панель в соответствие с уже применённым состоянием.
+    this._syncLocation2Panel();
+
+    // ★ Тумблеры привязаны к мировому углу доски — позиционируем
+    //   их при каждом полном рендере, чтобы после первого setGame
+    //   они сразу встали на место (до этого _applyCameraTransform
+    //   вызывался раньше, чем существовал this.refs).
+    this._projectLocalToggles();
   }
 
   _renderPieces() {
@@ -2013,11 +2387,50 @@ export class View {
       const isActive = side === 'white' ? whiteActive : blackActive;
       this._renderHandFor(side, container, isActive);
 
+      // ★ Подпись «Рука белых/чёрных» — в мультиплеере заменяется ником.
+      const labelEl = side === 'white' ? this.refs.whiteHandLabel : this.refs.blackHandLabel;
+      if (labelEl) labelEl.textContent = 'Рука ' + this._sideGenitive(side);
+
       const playedEl = side === 'white' ? this.refs.whitePlayed : this.refs.blackPlayed;
       playedEl.textContent = st.playedThisTurn;
 
       const block = side === 'white' ? this.refs.whiteHand : this.refs.blackHand;
-      block.classList.toggle('inactive', !isActive);
+      const statusEl = side === 'white' ? this.refs.whiteHandStatus : this.refs.blackHandStatus;
+
+      // ★ Сбрасываем все состояния перед новой раскладкой.
+      block.classList.remove(
+        'inactive',
+        'hand-active',
+        'hand-waiting',
+        'hand-opponent',
+        'hand-opponent-active'
+      );
+
+      if (!this.mySide) {
+        // Одиночная игра: активная сторона пульсирует, пассивная
+        // приглушена — по одному взгляду видно, чей сейчас ход.
+        if (isActive) block.classList.add('hand-active');
+        else block.classList.add('inactive');
+        if (statusEl) statusEl.textContent = '';
+      } else {
+        const isMine = (this.mySide === side);
+        if (isMine) {
+          if (isActive) {
+            // Моя рука, мой ход.
+            block.classList.add('hand-active');
+            if (statusEl) statusEl.textContent = '· ваш ход';
+          } else {
+            // Моя рука, сейчас не мой ход.
+            block.classList.add('hand-waiting');
+            if (statusEl) statusEl.textContent = '· ждёт хода';
+          }
+        } else {
+          // Рука оппонента. Одинаковая база, чуть ярче, когда ходит он.
+          block.classList.add('hand-opponent');
+          if (isActive) block.classList.add('hand-opponent-active');
+          if (statusEl) statusEl.textContent = isActive ? '· ходит' : '· ждёт хода';
+        }
+      }
     }
 
     this.refs.whiteHandHeader.querySelector('.played-info').style.display = whiteActive ? '' : 'none';
@@ -2035,9 +2448,15 @@ export class View {
     const st = game.cardState[side];
     const inDiscard = isActive && this.ui.discardMode;
     const warningShown = isActive && this.ui.endTurnPanelOpen;
-    const canPlay = isActive && !inDiscard && !this.ui.discardLocked && !game.revealState.active
+    // ★ Моя сторона? В одиночной игре (mySide == null) — да, для любой руки.
+    //   В мультиплеере карты оппонента всегда неактивны: они не получают
+    //   ни hover, ни pointer-курсора, ни клика. Раньше canPlay зависел
+    //   только от «чья очередь», и в свой ход оппонента его карты
+    //   выглядели нажимаемыми — это и был баг.
+    const isOpponent = !!this.mySide && this.mySide !== side;
+    const canPlay = !isOpponent && isActive && !inDiscard && !this.ui.discardLocked && !game.revealState.active
                   && st.playedThisTurn < 4 && !this.animating && !game.gameOver;
-    const canDiscard = inDiscard && st.hand.length > 1 && !this.animating;
+    const canDiscard = !isOpponent && inDiscard && st.hand.length > 1 && !this.animating;
     const enabled = canPlay || canDiscard;
 
     const existing = new Map();
@@ -2264,6 +2683,10 @@ export class View {
       const container = side === 'white' ? this.refs.whiteDiscardSlots : this.refs.blackDiscardSlots;
       const countEl = side === 'white' ? this.refs.whiteDiscardCount : this.refs.blackDiscardCount;
       countEl.textContent = st.discard.length;
+
+      // ★ Подпись «Сброс белых/чёрных» — в мультиплеере заменяется ником.
+      const labelEl = side === 'white' ? this.refs.whiteDiscardLabel : this.refs.blackDiscardLabel;
+      if (labelEl) labelEl.textContent = 'Сброс ' + this._sideGenitive(side);
       container.innerHTML = '';
       // ★ Порядок стопок берём из game.getDisplayOrder — единый
       //   источник правды для «как команда отображается». Иначе
@@ -2324,10 +2747,38 @@ export class View {
     this.refs.turnPanel.classList.toggle('black-turn', turn === 'black');
     this.refs.turnLabel.classList.toggle('white', turn === 'white');
     this.refs.turnLabel.classList.toggle('black', turn === 'black');
-    this.refs.turnLabel.textContent = turn === 'white' ? '● Ход белых' : '● Ход чёрных';
+    this.refs.turnLabel.textContent = '● Ход ' + this._sideGenitive(turn);
     this.refs.turnNumber.textContent = 'Ход №' + this.game.turnNumber;
-  }
 
+    // ★ В мультиплеере, когда сейчас не мой ход, вместо кнопки
+    //   «Подготовка к завершению хода» показываем неинтерактивную
+    //   плашку ожидания. В одиночной игре mySide == null — плашка
+    //   никогда не появляется, всё работает как раньше.
+    const isOpponentTurn = !!this.mySide
+      && this.game.currentTurn !== this.mySide
+      && !this.game.gameOver;
+    if (this.refs.endTurnBtn) {
+      this.refs.endTurnBtn.classList.toggle('hidden', isOpponentTurn);
+    }
+    if (this.refs.waitingIndicator) {
+      this.refs.waitingIndicator.classList.toggle('hidden', !isOpponentTurn);
+    }
+
+    // ★ Страховка: если сейчас НАШ ход — плашка чужого действия не
+    //   должна висеть. Основной путь скрытия — _onTurnChanged, но он
+    //   срабатывает только когда событие turnChanged доедет до
+    //   playEvent через всю очередь анимаций. В мультиплеере бывают
+    //   гонки (переподключение, застрявшая анимация, порядок events/
+    //   state), из-за которых баннер остаётся на экране. Здесь мы
+    //   восстанавливаем инвариант «в мой ход баннер чужого действия
+    //   не показывается» — дёшево и без побочек.
+    if (this.mySide && turn === this.mySide) {
+      const el = this.refs && this.refs.actionBanner;
+      if (el && !el.classList.contains('hidden')) {
+        this._hideActionBanner();
+      }
+    }
+  }
   // ==========================================================
   // УСЛОВНЫЕ СТРЕЛКИ
   // ==========================================================
@@ -2355,6 +2806,17 @@ export class View {
 
   _renderLocationBonusButtons() {
     const game = this.game;
+
+    // ★ Пока идёт любая анимация действия или в очереди ждут
+    //   события — кнопки бонусов принудительно скрыты. Это
+    //   вторая линия защиты (первая — локальная пометка
+    //   actionTakenThisTurn в net.onAction). Даже если по какой-то
+    //   причине локальное состояние ещё не отражает совершённое
+    //   действие, во время анимации кнопки не будут висеть поверх
+    //   движения/атаки: игрок всё равно не может нажать бонус,
+    //   пока анимация не закончилась.
+    const actionLock = !!this.animating || this._eventQueue.length > 0;
+
     for (const side of ['white', 'black']) {
       for (const locId of LOCATION_BONUS_IDS) {
         const key = `${side}_${locId}`;
@@ -2409,6 +2871,7 @@ export class View {
           const revealActive = game.revealState.active && game.revealState.side === side && locId === 2;
           if (revealActive) visible = true;
           if (game.revealState.active && !revealActive) enabled = false;
+          // Контроллируемость обрабатывается ниже отдельным классом.
         }
 
         const active = !!(this.ui.activePanel
@@ -2416,14 +2879,30 @@ export class View {
           && this.ui.activePanel.locId === locId);
         if (active) visible = true;
 
+        // ★ «Оппонент в свой ход»: кнопка видна и светится, но кликнуть
+        //   её я не могу. Показываем свечением, а не серой заглушкой.
+        // ★ Если играет анимация — гасим кнопку независимо от того,
+        //   что говорят флаги состояния (см. actionLock выше).
+        if (actionLock) visible = false;
+
+        const controllable = this._canControl(side);
+        const showDisabled = visible && !enabled;
+        const showOpponentGlow = visible && enabled && !controllable;
+
         btn.classList.toggle('hidden', !visible);
         btn.classList.toggle('active', active);
-        btn.classList.toggle('disabled', visible && !enabled);
+        btn.classList.toggle('disabled', showDisabled);
+        btn.classList.toggle('opponent-turn', showOpponentGlow);
         btn.classList.toggle('white-team', side === 'white');
         btn.classList.toggle('black-team', side === 'black');
       }
     }
     this._projectLocationBonusButtons();
+    // ★ Плашки владения зависят от видимости кнопок бонусов, поэтому
+    //   пересчитываем их ровно в тот момент, когда видимость кнопок
+    //   уже определена. _renderLocationBonusButtons вызывается из
+    //   renderAll и из всех мест, где что-то меняет состояние бонусов.
+    this._renderLocationInfluenceHighlights();
   }
 
   _locationBonusTooltip(locId) {
@@ -2431,6 +2910,210 @@ export class View {
     if (locId === 4) return 'Бонус локации: сбросить карту, взять из сброса';
     if (locId === 5) return 'Бонус локации: телепортировать персонажа';
     return 'Бонус локации: сбросить карту, взять новую';
+  }
+
+  // ★ Рисует плашку «чья локация» под каждой из 5 локаций.
+  //   Владелец считается ПО ТЕКУЩЕМУ влиянию (getLocationStats) —
+  //   то есть подсветка динамическая и меняется в ходе игры.
+  //   Плашка НЕ рисуется, если для этой физической локации сейчас
+  //   видна хотя бы одна кнопка бонуса (любой из сторон) — тогда
+  //   игрок видит кнопку, а не цветную плашку.
+  _renderLocationInfluenceHighlights() {
+    // ★ Вызывается из _renderLocationBonusButtons — то есть из renderAll
+    //   и из всех мест, где меняется состояние бонусов локаций.
+    //   Здесь же проверка this.refs: метод дёргается и до _buildDomRefs
+    //   (через _applyCameraTransform в _buildScene → refit → _fitBody).
+    if (!this.refs) return;
+    if (!this.locationInfluenceHighlights) return;
+    const container = this.refs.locationInfluenceContainer;
+    if (!container) return;
+    const game = this.game;
+    if (!game) return;
+
+    // ★ Плашки скрыты, пока игрок не зажмёт Shift (или не коснётся
+    //   экрана тремя пальцами). Прячем все созданные элементы и выходим,
+    //   не пересчитывая владельца локаций — незачем.
+    if (!this._locationInfluenceVisible) {
+      for (const [, el] of this.locationInfluenceHighlights) {
+        el.classList.add('hidden');
+      }
+      return;
+    }
+
+    // Пять физических локаций. Локация 3 — без бонуса (нет в
+    // LOCATION_BONUS_IDS), но подсветку владения всё равно рисуем:
+    // контроль центра важен (см. _applyLocation3Damage).
+    const physLocs = [1, 2, 3, 4, 5];
+
+    for (const physLoc of physLocs) {
+      let el = this.locationInfluenceHighlights.get(physLoc);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'location-influence-highlight hidden';
+        container.appendChild(el);
+        this.locationInfluenceHighlights.set(physLoc, el);
+      }
+
+      // ─── Кто владеет физической локацией сейчас ───
+      const infWhite = game.getLocationStats('white', physLoc);
+      const infBlack = game.getLocationStats('black', physLoc);
+      let owner = null;
+      if (infWhite > infBlack) owner = 'white';
+      else if (infBlack > infWhite) owner = 'black';
+
+      // ─── Есть ли сейчас видимая кнопка бонуса для этой
+      //     физической локации (у любой из сторон)? ───
+      let hasButton = false;
+      for (const side of ['white', 'black']) {
+        for (const locId of LOCATION_BONUS_IDS) {
+          const physical = side === 'white' ? locId : (6 - locId);
+          if (physical !== physLoc) continue;
+          const btn = this.locationBonusButtons[`${side}_${locId}`];
+          if (btn && !btn.classList.contains('hidden')) {
+            hasButton = true;
+            break;
+          }
+        }
+        if (hasButton) break;
+      }
+
+      if (!owner || hasButton) {
+        el.classList.add('hidden');
+        continue;
+      }
+
+      el.classList.remove('hidden', 'white-team', 'black-team');
+      el.classList.add(owner === 'white' ? 'white-team' : 'black-team');
+      // ★ Цифры влияния красим по стороне, а не по цвету плашки:
+      //   слева всегда белая команда (светло-красная), справа
+      //   всегда чёрная (светло-жёлтая). Так даже на «чёрной»
+      //   плашке видно, что левая цифра — про белых, а не совпадает
+      //   по цвету с чёрной командой.
+      el.innerHTML =
+        this._sideNominativeCaps(owner) +
+        `<span class="lih-scores">` +
+          `<span class="lih-white">${infWhite}</span>` +
+          ` : ` +
+          `<span class="lih-black">${infBlack}</span>` +
+        `</span>`;
+    }
+
+    this._projectLocationInfluenceHighlights();
+  }
+
+  // ★ Проекция контейнера #local-toggles на экран. Якорь — левый-дальний
+  //   угол доски в мировых координатах (-BOARD_WIDTH/2, 0, -BOARD_HEIGHT/2).
+  //   Экранный оффсет — «куда» относительно якоря рисовать кнопки.
+  //   Правь константы ниже, если нужно сдвинуть ряд ближе к полю/дальше
+  //   от него или ближе к левой кромке.
+  _projectLocalToggles() {
+    if (!this.refs || !this.refs.localToggleContainer) return;
+    const rect = this._bodyRectOf(this.renderer.domElement);
+    const wp = new THREE.Vector3(-BOARD_WIDTH / 2, 0, -BOARD_HEIGHT / 2);
+    const vec = wp.project(this.camera);
+    const sx = (vec.x * 0.5 + 0.5) * rect.width + rect.left;
+    const sy = (-vec.y * 0.5 + 0.5) * rect.height + rect.top;
+    // Оффсет от угла доски в экранных пикселях (в body-координатах).
+    this.refs.localToggleContainer.style.left = (sx - 8) + 'px';
+    this.refs.localToggleContainer.style.top  = (sy - 58) + 'px';
+  }
+
+  _projectLocationInfluenceHighlights() {
+    if (!this.refs) return;
+    if (!this.locationInfluenceHighlights) return;
+    const container = this.refs.locationInfluenceContainer;
+    if (!container) return;
+    const rect = this._bodyRectOf(this.renderer.domElement);
+    for (const [physLoc, el] of this.locationInfluenceHighlights) {
+      if (el.classList.contains('hidden')) continue;
+      const pos = LOCATION_INFLUENCE_POSITIONS[physLoc];
+      if (!pos) continue;
+      const { x: wx, z: wz } = pxTo3D(pos.x, pos.y);
+      const vec = new THREE.Vector3(wx, 0.5, wz).project(this.camera);
+      el.style.left = ((vec.x * 0.5 + 0.5) * rect.width + rect.left) + 'px';
+      el.style.top  = ((-vec.y * 0.5 + 0.5) * rect.height + rect.top) + 'px';
+    }
+  }
+
+  _showCellLabels() {
+    // ★ Shift / 3 пальца включают СРАЗУ оба слоя: и номера ячеек,
+    //   и плашки владения локациями. Обе «причины» независимы от
+    //   тумблеров — тумблеры только добавляют постоянный показ поверх.
+    this._cellLabelsShiftOn = true;
+    this._locationInfluenceShiftOn = true;
+    this._refreshCellLabelsVisibility();
+    this._refreshLocationInfluenceVisibility();
+    this._updateLocalTogglesUI();
+  }
+
+  _hideCellLabels() {
+    // ★ Shift отпущен — снимаем временный показ. Если тумблер
+    //   включён, соответствующий слой остаётся видимым.
+    this._cellLabelsShiftOn = false;
+    this._locationInfluenceShiftOn = false;
+    this._refreshCellLabelsVisibility();
+    this._refreshLocationInfluenceVisibility();
+    this._updateLocalTogglesUI();
+  }
+
+  // ★ Пересчитывает видимость слоя номеров ячеек. Слой виден, если
+  //   либо зажат Shift/3 пальца (_cellLabelsShiftOn), либо включён
+  //   тумблер-кнопка (_cellLabelsToggleOn). Вызывается и из жестов,
+  //   и из обработчика кнопки в #local-toggles.
+  _refreshCellLabelsVisibility() {
+    const visible = this._cellLabelsShiftOn || this._cellLabelsToggleOn;
+    if (visible === this._cellLabelsVisible) return;
+    this._cellLabelsVisible = visible;
+
+    const layer = this.refs.cellLabelsLayer;
+    if (!layer) return;
+
+    if (!visible) {
+      layer.classList.remove('visible');
+      return;
+    }
+
+    // ★ Элементы создаём один раз при первом показе и переиспользуем.
+    //   BOARD в рантайме не меняется, так что кэш всегда валиден.
+    if (this.cellLabelElements.size === 0) {
+      BOARD.forEach(cell => {
+        const el = document.createElement('div');
+        el.className = 'cell-label';
+        // ★ Показываем буквенно-цифровую метку (A1, B4, H2…).
+        //   Fallback на id — на случай, если BOARD когда-нибудь
+        //   расширят новой клеткой, которой ещё нет в CELL_LABELS.
+        el.textContent = CELL_LABELS[cell.id] || String(cell.id);
+        layer.appendChild(el);
+        this.cellLabelElements.set(cell.id, el);
+      });
+    }
+
+    layer.classList.add('visible');
+    this._projectCellLabels();
+  }
+
+  // ★ Пересчитывает видимость плашек владения локациями — по тому же
+  //   принципу, что и номера ячеек: видно, если зажат Shift/3 пальца
+  //   ИЛИ включён тумблер ◆. Вызывается из жестов и из обработчика
+  //   кнопки #local-toggle-loc.
+  _refreshLocationInfluenceVisibility() {
+    const visible = this._locationInfluenceShiftOn || this._locationInfluenceToggleOn;
+    if (visible === this._locationInfluenceVisible) return;
+    this._locationInfluenceVisible = visible;
+    this._renderLocationInfluenceHighlights();
+  }
+
+  _projectCellLabels() {
+    if (!this._cellLabelsVisible) return;
+    if (!this.refs.cellLabelsLayer) return;
+    const rect = this._bodyRectOf(this.renderer.domElement);
+    for (const [cellId, el] of this.cellLabelElements) {
+      const p = getPoint(cellId);
+      if (!p) continue;
+      const vec = new THREE.Vector3(p.x, 0.5, p.z).project(this.camera);
+      el.style.left = ((vec.x * 0.5 + 0.5) * rect.width + rect.left) + 'px';
+      el.style.top  = ((-vec.y * 0.5 + 0.5) * rect.height + rect.top) + 'px';
+    }
   }
 
   _projectLocationBonusButtons() {
@@ -2458,6 +3141,7 @@ export class View {
 
   _onLocationBonusClick(side, locId) {
     const game = this.game;
+    if (!this._canControl(side)) return;
     if (this.animating || game.gameOver) return;
     if (side !== game.currentTurn) return;
     if (this.ui.discardMode || this.ui.discardLocked) return;
@@ -2648,11 +3332,134 @@ export class View {
       return;
     }
     const side = game.revealState.side;
-    this.ui.activePanel = { kind: 'loc2', side, locId: 2 };
 
+    // ★ Оппоненту панель с кнопками «Вернуть»/«Сбросить» не показываем.
+    //   Он видит только карты вскрытия над колодой (см. _renderRevealCards).
+    if (!this._isMySide(side)) {
+      this.ui.activePanel = null;
+      this.refs.locationBonusPanel.classList.add('hidden');
+      this.refs.locationBonusIcon.style.display = '';
+      this.refs.locationBonusIcon.classList.remove('active');
+      this._renderRevealCards(side);
+      this._renderLocationBonusButtons();
+      return;
+    }
+
+    this.ui.activePanel = { kind: 'loc2', side, locId: 2 };
     this._renderLocation2ButtonsOnly();
     this._renderRevealCards(side);
     this._renderLocationBonusButtons();
+  }
+
+  // ★ Синхронизация панели бонуса 2 с game.revealState. Вызывается
+  //   из renderAll() после каждого рендера.
+  //   В онлайне порядок сообщений от сервера: сначала events
+  //   (locationBonus2Started), потом state. На момент обработки
+  //   события game.revealState.active на клиенте ещё false, и
+  //   _renderLocation2Panel себя отменяет через _hideLocationPanel.
+  //   Когда приходит state и revealState становится active, панель
+  //   уже скрыта — этот метод её восстанавливает.
+    _syncLocation2Panel() {
+    if (!this.game || !this.game.revealState) return;
+    const active = this.game.revealState.active;
+    const panel = this.refs.locationBonusPanel;
+    if (!panel) return;
+
+    if (!active) {
+      // Reveal завершился — прячем панель и ГАРАНТИРОВАННО чистим
+      // слой карт вскрытия. Раньше _clearRevealCards вызывался
+      // только через _hideLocationPanel, а он у оппонента не
+      // срабатывал (у него не было activePanel.kind === 'loc2') —
+      // карты висели над колодой после завершения бонуса.
+      if (this.ui.activePanel && this.ui.activePanel.kind === 'loc2') {
+        this._hideLocationPanel();
+      }
+      this._clearRevealCards();
+      return;
+    }
+
+    const side = this.game.revealState.side;
+    const cards = this.game.revealState.cards || [];
+
+    // ★ Оппоненту панель с кнопками не показываем — только карты
+    //   вскрытия над колодой.
+    if (!this._isMySide(side)) {
+      this.ui.activePanel = null;
+      this.refs.locationBonusPanel.classList.add('hidden');
+      this.refs.locationBonusIcon.style.display = '';
+      this.refs.locationBonusIcon.classList.remove('active');
+      this._syncRevealCardsUids(side, cards);
+      return;
+    }
+
+    // Активная сторона.
+    const panelVisible = !panel.classList.contains('hidden');
+    const panelSide = (this.ui.activePanel && this.ui.activePanel.kind === 'loc2')
+      ? this.ui.activePanel.side
+      : null;
+
+    if (!panelVisible || panelSide !== side) {
+      this._renderLocation2Panel();
+      return;
+    }
+    // Панель уже правильная — синхронизируем состав карт:
+    //  * _syncRevealCardsUids — визуальный слой над колодой;
+    //  * _renderLocation2ButtonsOnly — кнопки «Вернуть/Сбросить».
+    // Без второго вызова панель у активного игрока не обновляется
+    // после resolve: события приходят ДО state, и на момент обработки
+    // события game.revealState.cards ещё содержит разрешённую карту.
+    // Только по приходу state карта уходит из массива — вот в этот
+    // момент кнопочная панель и должна перестроиться.
+    this._syncRevealCardsUids(side, cards);
+    this._renderLocation2ButtonsOnly();
+  }
+
+  // ★ Инкрементальная синхронизация набора карт вскрытия.
+  //   Добавляет недостающие по uid, удаляет лишние. Не трогает
+  //   карты, которые уже есть в DOM, — чтобы не было мерцания,
+  //   пока после события ещё не пришёл state.
+  _syncRevealCardsUids(side, cards) {
+    const layer = this.refs.revealLayer;
+    if (!layer) return;
+
+    const gameUids = new Set(cards.map(c => c.uid));
+    const toRemove = [];
+    const domUids = new Set();
+    this.revealCardElements.forEach(el => {
+      const uid = el.dataset && el.dataset.cardUid;
+      if (!uid) { toRemove.push(el); return; }
+      if (!gameUids.has(uid)) { toRemove.push(el); return; }
+      domUids.add(uid);
+    });
+
+    toRemove.forEach(el => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    this.revealCardElements = this.revealCardElements.filter(
+      el => !toRemove.includes(el)
+    );
+
+    cards.forEach(card => {
+      if (domUids.has(card.uid)) return;
+      const el = document.createElement('div');
+      el.className = 'reveal-card';
+      el.dataset.cardUid = card.uid;
+      const img = document.createElement('img');
+      img.src = card.imgPath;
+      img.onerror = () => img.remove();
+      el.appendChild(img);
+      el.addEventListener('click', (e) => e.stopPropagation());
+      this._attachHoverToElement(el, card);
+      layer.appendChild(el);
+      this.revealCardElements.push(el);
+    });
+
+    layer.classList.toggle('white-team', side === 'white');
+    layer.classList.toggle('black-team', side === 'black');
+
+    if (this.revealCardElements.length > 0) {
+      this._positionRevealCards(side);
+    }
   }
 
   // ★ Обновляет только кнопки «Вернуть»/«Сбросить» и заголовки панели
@@ -2750,10 +3557,18 @@ export class View {
     const deckEl = side === 'white' ? this.refs.whiteDeckVisual : this.refs.blackDeckVisual;
     if (!deckEl) return;
 
+    // ★ Пропускаем уже разрешённые (resolved) карты. Они ещё лежат
+    //   в revealCardElements, потому что state с их удалением не
+    //   пришёл — но визуально они уже улетели ghost'ом в колоду/сброс.
+    const activeEls = this.revealCardElements.filter(
+      el => !el.dataset || el.dataset.resolved !== '1'
+    );
+    if (activeEls.length === 0) return;
+
     const rect = this._bodyRectOf(deckEl);
     const vh = document.documentElement.clientHeight || window.innerHeight;
     const scale = Math.min(window.innerWidth / VIRTUAL_W, vh / VIRTUAL_H);
-    const firstRect = this.revealCardElements[0].getBoundingClientRect();
+    const firstRect = activeEls[0].getBoundingClientRect();
     const cardW = (firstRect.width || 110) / scale;
     const cardH = (firstRect.height || 156) / scale;
     const gap = Math.max(6, cardW * 0.11);
@@ -2762,8 +3577,8 @@ export class View {
     const startX = cx - cardW / 2;
     const baseY = rect.top - cardH * 0.4;
 
-    const n = this.revealCardElements.length;
-    this.revealCardElements.forEach((el, i) => {
+    const n = activeEls.length;
+    activeEls.forEach((el, i) => {
       el.style.left = startX + 'px';
       el.style.top  = (baseY - cardH * (n - i) - gap * (n - i - 1)) + 'px';
     });
@@ -3254,6 +4069,12 @@ export class View {
     badge.userData = { pieceId: piece.id, badgeCard: mirror };
     group.add(badge);
 
+    // ★ Оригинальный эффект зерцала — пробегающий блик поверх бейджа.
+    //   Тонкая плоскость чуть выше самого бейджа, с текстурой-«молнией»
+    //   (диагональный градиент). В _startRenderLoop мы периодически
+    //   проезжаем по ней через map.offset.x — выглядит как солнечный
+    //   зайчик, скользящий по стеклу. Каждому зерцалу выдан свой
+    //   случайный phaseOffset, чтобы поле не мигало синхронно.
     const shimTex = this.shimmerTexture.clone();
     shimTex.needsUpdate = true;
     shimTex.wrapS = THREE.RepeatWrapping;
@@ -3270,7 +4091,11 @@ export class View {
     shim.rotation.x = rotX;
     shim.position.set(0, MIRROR_BADGE_HEIGHT + 0.001, MIRROR_BADGE_OFFSET_Z);
     shim.renderOrder = 222;
-    shim.userData = { pieceId: piece.id, phaseOffset: Math.random() * MIRROR_SHIMMER_INTERVAL, disabled: false };
+    shim.userData = {
+      pieceId: piece.id,
+      phaseOffset: Math.random() * MIRROR_SHIMMER_INTERVAL,
+      disabled: false,
+    };
     group.add(shim);
 
     this.mirrorMeshes.set(piece.id, { badge, shimmer: shim, shadow });
@@ -3376,7 +4201,18 @@ export class View {
         const idx = this.stadiumHighlights.indexOf(s);
         if (idx >= 0) this.stadiumHighlights.splice(idx, 1);
       }
+      // ★ Единый проход: отписываем от спиннера + dispose геометрии/материалов.
+      //   Раньше spinningHighlights чистился только в _startRenderLoop по
+      //   условию `!s.mesh.parent`, но у dash родитель — это ВНУТРЕННЯЯ
+      //   группа подсветки, а не external *Group. При group.remove(c)
+      //   c.parent становится null, а dash.parent остаётся c — условие
+      //   никогда не срабатывало, и массив копил мёртвые записи всю партию.
       c.traverse(o => {
+        for (let i = this.spinningHighlights.length - 1; i >= 0; i--) {
+          if (this.spinningHighlights[i].mesh === o) {
+            this.spinningHighlights.splice(i, 1);
+          }
+        }
         if (o.geometry) o.geometry.dispose();
         if (o.material) {
           if (o.material.map) o.material.map.dispose();
@@ -3814,6 +4650,7 @@ export class View {
   }
 
   _onDiscardCardClick(side, idx, card) {
+    if (!this._canControl(side)) return;
     if (this.animating || this.game.gameOver) return;
     if (side !== this.game.currentTurn) return;
     if (!this.ui.discardMode) return;
@@ -3837,6 +4674,7 @@ export class View {
   // ==========================================================
 
   _onCardClick(side, index, card) {
+    if (!this._canControl(side)) return;
     if (side !== this.game.currentTurn) return;
     if (this.animating || this.game.gameOver) return;
     if (this.ui.discardMode) return;
@@ -3897,6 +4735,7 @@ export class View {
 
   _onActionButton(mode) {
     const game = this.game;
+    if (!this._canControl(game.currentTurn)) return;
     const cardUid = this.ui.selectedCardUid;
     if (!cardUid) return;
     const side = game.currentTurn;
@@ -4229,7 +5068,7 @@ export class View {
     content.classList.add(side === 'white' ? 'white-team' : 'black-team');
     const header = document.createElement('div');
     header.className = 'deck-overlay-header';
-    header.textContent = `Колода ${side === 'white' ? 'белых' : 'чёрных'} — карт: ${st.deck.length}`;
+    header.textContent = `Колода ${this._sideGenitive(side)} — карт: ${st.deck.length}`;
     content.appendChild(header);
     const row = document.createElement('div');
     row.className = 'deck-overlay-cards';
@@ -4262,7 +5101,7 @@ export class View {
     content.classList.add(side === 'white' ? 'white-team' : 'black-team');
     const header = document.createElement('div');
     header.className = 'deck-overlay-header';
-    header.textContent = `Сброс ${side === 'white' ? 'белых' : 'чёрных'} — карт: ${st.discard.length}`;
+    header.textContent = `Сброс ${this._sideGenitive(side)} — карт: ${st.discard.length}`;
     content.appendChild(header);
     const row = document.createElement('div');
     row.className = 'deck-overlay-cards';
@@ -4549,6 +5388,65 @@ export class View {
         if (p) this._showTabletOverlay(p);
       }
     }
+    // ★ Синхронизируем подсветку тумблера в UI (клавиша G и кнопка
+    //   в #local-toggles вызывают один и тот же метод).
+    this._updateLocalTogglesUI();
+  }
+
+  // ★ Обновляет подсветку кнопок-тумблеров в #local-toggles в
+  //   соответствии с текущими флагами view. Вызывается из обработчиков
+  //   кнопок и из _toggleExtras (при нажатии G).
+  _updateLocalTogglesUI() {
+    if (!this.refs) return;
+    // ★ Подсветка кнопки отражает ИТОГОВУЮ видимость слоя, а не
+    //   только флаг тумблера. Так Shift (и 3 пальца) тоже зажигают
+    //   обе кнопки — визуально это индикатор «сейчас показано»,
+    //   независимо от того, чем именно включено.
+    if (this.refs.localToggleCell) {
+      this.refs.localToggleCell.classList.toggle('active', this._cellLabelsVisible);
+    }
+    if (this.refs.localToggleLoc) {
+      this.refs.localToggleLoc.classList.toggle('active', this._locationInfluenceVisible);
+    }
+    if (this.refs.localToggleExtras) {
+      this.refs.localToggleExtras.classList.toggle('active', !!this.extrasVisible);
+    }
+  }
+
+  // ★ Курсор над бейджем зерцала. Кликабельно, если это зерцало
+  //   принадлежит стороне, чей сейчас ход (в одиночной игре — любой
+  //   текущей стороне, в мультиплеере — только моей). Иначе — нельзя.
+  _updateMirrorCursor(clientX, clientY) {
+    const canvas = this.renderer.domElement;
+    const game = this.game;
+    if (!game || this.mirrorMeshes.size === 0) {
+      if (canvas.style.cursor) canvas.style.cursor = '';
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right
+        || clientY < rect.top || clientY > rect.bottom) {
+      if (canvas.style.cursor) canvas.style.cursor = '';
+      return;
+    }
+    this.mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    const badgeMeshes = [];
+    for (const [, m] of this.mirrorMeshes.entries()) badgeMeshes.push(m.badge);
+    const hits = this.raycaster.intersectObjects(badgeMeshes, false);
+    if (hits.length > 0 && hits[0].object.userData.badgeCard) {
+      const pieceId = hits[0].object.userData.pieceId;
+      const piece = game.getPiece(pieceId);
+      if (piece && piece.mirror) {
+        const usable = game.currentTurn === piece.side
+                    && (!this.mySide || this.mySide === piece.side);
+        canvas.style.cursor = usable ? 'pointer' : 'not-allowed';
+        return;
+      }
+    }
+    if (canvas.style.cursor) canvas.style.cursor = '';
   }
 
   _checkHoverAt(clientX, clientY) {
@@ -4677,6 +5575,7 @@ export class View {
 
     r.endTurnBtn.onclick = async (e) => {
       e.stopPropagation();
+      if (!this._canControl(this.game.currentTurn)) return;
       if (this.animating || this.game.gameOver) return;
 
       // ★ Защита от даблклика: пока идёт последовательный возврат карт
@@ -4799,6 +5698,10 @@ export class View {
         this._cancelEndTurnConfirm();
         return;
       }
+      // ★ Shift — показать номера ячеек. e.repeat отсекаем — иначе при
+      //   удержании клавиши браузер шлёт keydown десятки раз в секунду,
+      //   и каждый раз _showCellLabels() пересчитывал бы проекцию.
+      if (e.key === 'Shift' && !e.repeat) { this._showCellLabels(); return; }
       if ((e.key === 'g' || e.key === 'G' || e.key === 'п' || e.key === 'П') && !e.repeat) {
         this._toggleExtras();
         return;
@@ -4828,6 +5731,7 @@ export class View {
       }
     });
     window.addEventListener('keyup', (e) => {
+      if (e.key === 'Shift') { this._hideCellLabels(); return; }
       if (e.key === 'Control' && this.ctrlPressed) {
         this.ctrlPressed = false;
         document.body.classList.remove('ctrl-mode');
@@ -4844,6 +5748,9 @@ export class View {
       this._hideCardOverlay();
       this.hoveredPieceId = null;
       this.hoveredCaptainSide = null;
+      // ★ При потере фокуса окна keyup от Shift может не прийти —
+      //   тогда номера ячеек остались бы висеть. Прячем принудительно.
+      this._hideCellLabels();
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -4856,6 +5763,7 @@ export class View {
     this.renderer.domElement.addEventListener('mousemove', (e) => {
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
+      this._updateMirrorCursor(e.clientX, e.clientY);
       if (!this.ctrlPressed) return;
       pendingMouseX = e.clientX;
       pendingMouseY = e.clientY;
@@ -4869,6 +5777,7 @@ export class View {
       });
     });
     this.renderer.domElement.addEventListener('mouseleave', () => {
+      this.renderer.domElement.style.cursor = '';
       this.hoveredPieceId = null;
       this.hoveredCaptainSide = null;
       this.hoveredBadgeCard = null;
@@ -4903,6 +5812,21 @@ export class View {
         this._updateCardOverlay();
       }
     });
+
+    // ★ Показ номеров ячеек тремя пальцами. Отдельный слушатель,
+    //   чтобы не вмешиваться в логику pinch-зума и long-press,
+    //   которая живёт в соседних обработчиках touchstart/touchend.
+    document.addEventListener('touchstart', (e) => {
+      if (e.touches.length >= 3) this._showCellLabels();
+    }, { passive: true });
+    document.addEventListener('touchend', (e) => {
+      // e.touches на touchend содержит ТОЛЬКО те пальцы, которые
+      // остаются на экране (не считая только что отпущенного).
+      if (e.touches.length < 3) this._hideCellLabels();
+    }, { passive: true });
+    document.addEventListener('touchcancel', () => {
+      this._hideCellLabels();
+    }, { passive: true });
 
     document.addEventListener('touchstart', (e) => {
       // ★ Второй палец — это уже pinch-жест, а не long-press.
@@ -4964,7 +5888,34 @@ export class View {
       if (tag === 'input' || tag === 'textarea') return;
       e.preventDefault();
     });
-	
+
+    // ★ Три локальные кнопки-тумблера у левой границы поля.
+    //   Они не синхронизируются с сервером — каждый игрок включает
+    //   их независимо для себя. Каждая переключает свой режим и
+    //   обновляет собственную подсветку (класс .active).
+    if (this.refs.localToggleCell) {
+      this.refs.localToggleCell.onclick = (e) => {
+        e.stopPropagation();
+        this._cellLabelsToggleOn = !this._cellLabelsToggleOn;
+        this._refreshCellLabelsVisibility();
+        this._updateLocalTogglesUI();
+      };
+    }
+    if (this.refs.localToggleLoc) {
+      this.refs.localToggleLoc.onclick = (e) => {
+        e.stopPropagation();
+        this._locationInfluenceToggleOn = !this._locationInfluenceToggleOn;
+        this._refreshLocationInfluenceVisibility();
+        this._updateLocalTogglesUI();
+      };
+    }
+    if (this.refs.localToggleExtras) {
+      this.refs.localToggleExtras.onclick = (e) => {
+        e.stopPropagation();
+        this._toggleExtras();
+      };
+    }
+
     // ★ Pinch-to-zoom + колесо мыши.
     this._wirePinchZoom();
   }
@@ -5182,6 +6133,15 @@ export class View {
     if (performance.now() < this._suppressClickUntil) return;
     if (this.ui.discardMode || this.ui.discardLocked) return;
     if (game.revealState.active) return;
+
+    // ★ В мультиплеере в чужой ход любые клики по полю только сбрасывают
+    //   текущее выделение. Никаких «наведи и подтверди» не работает.
+    if (this.mySide && game.currentTurn !== this.mySide) {
+      if (this.ui.pendingMode || this.ui.selectedCardUid) {
+        this._resetSelectionLocal();
+      }
+      return;
+    }
 
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -5453,7 +6413,7 @@ export class View {
     }
   }
 
-  _animateMove(ev) {
+_animateMove(ev) {
     const path = ev.path;
     if (!path || path.length < 2) return;
     const entry = this.pieceMeshes.get(ev.pieceId);
@@ -5471,7 +6431,17 @@ export class View {
       const p0 = waypoints[segIdx], p1 = waypoints[segIdx + 1];
       entry.mesh.position.x = p0.x + (p1.x - p0.x) * segFrac;
       entry.mesh.position.z = p0.z + (p1.z - p0.z) * segFrac;
-      this._syncHpSpritePosition(ev.pieceId);
+
+      // ★ ВАЖНО: _updateHpDisplay вместо _syncHpSpritePosition.
+      //   В онлайне game.piece.cellId обновляется асинхронно (state
+      //   приходит ПОСЛЕ events), поэтому isOnBase может быть всё ещё
+      //   true на первых кадрах. Пересчёт visible на каждом кадре
+      //   гарантирует, что сердечки появятся сразу, как только
+      //   жетон перестанет считаться «на базе», а не в конце движения.
+      //   _updateHpDisplay сам вызывает _syncHpSpritePosition в конце,
+      //   так что позиция спрайта тоже остаётся синхронной с жетоном.
+      this._updateHpDisplay(ev.pieceId);
+
       if (t < 1) requestAnimationFrame(tick);
       else {
         this.animating = null;
@@ -5481,7 +6451,7 @@ export class View {
       }
     };
     requestAnimationFrame(tick);
-  }
+}
 
   _animateAttack(ev) {
     const attacker = this.pieceMeshes.get(ev.attackerId);
@@ -5596,8 +6566,8 @@ export class View {
       //   ЧЁРНОЙ — белое.
       const ringCss = getKillerRingColor(enemySide, isKiller, colorCss);
 
-      const sprite = createOrbSprite(ringCss, EXPLORE_ICON_IMG, {
-        innerGlow: '#ff2ec4',
+      const sprite = createOrbSprite(ringCss, MID_ICON_IMG, {
+        innerGlow: '#3a8fff',
         shape: isKiller ? 'square' : 'circle',
       });
       const angle = (i / Math.max(1, ev.count)) * Math.PI * 2;
@@ -5639,8 +6609,8 @@ export class View {
       //   ЧЁРНОЙ — белое.
       const ringCss = getKillerRingColor(enemySide, isKiller, colorCss);
 
-      const sprite = createOrbSprite(ringCss, MID_ICON_IMG, {
-        innerGlow: '#3a8fff',
+      const sprite = createOrbSprite(ringCss, EXPLORE_ICON_IMG, {
+        innerGlow: '#ff2ec4',
         shape: isKiller ? 'square' : 'circle',
       });
       const angle = (i / 3) * Math.PI * 2;
@@ -5742,11 +6712,33 @@ export class View {
             try { this.playEvent(ev); } catch (err) { console.error('playEvent error:', ev && ev.kind, err); }
           }
         }
-        if (this.game.gameOver) {
-          this.powerOrbs.length = 0;
-          this.renderAll();
-          return;
-        }
+		if (this.game.gameOver) {
+		  // ★ Оставшиеся в полёте пузырьки всё равно должны попасть
+		  //   в историю: в локальной игре применяем их здесь (в сетевой
+		  //   это уже сделал сервер, и history приехала в state).
+		  //   Иначе «Хроника могущества» недосчитается последних
+		  //   кружков/квадрата — а это то, ради чего мы вообще держим
+		  //   отложенный applyMightChange.
+		  if (!this.net) {
+			for (const o of this.powerOrbs) {
+			  try {
+				this.game.applyMightChange(o.affectedSide, -1, o.kind, o.actor, o.turn);
+			  } catch (e) {
+				console.error('applyMightChange on gameOver failed:', e);
+			  }
+			}
+		  }
+		  // Освобождаем GPU-ресурсы — иначе спрайты висят до reload.
+		  for (const o of this.powerOrbs) {
+			if (o.sprite.parent) o.sprite.parent.remove(o.sprite);
+			if (o.sprite.material.map) o.sprite.material.map.dispose();
+			o.sprite.material.dispose();
+		  }
+		  this.powerOrbs.length = 0;
+		  this._pendingMightLoss = { white: 0, black: 0 };
+		  this.renderAll();
+		  return;
+		}
         this._renderCaptains();
         this._renderTurnPanel();
       }
@@ -5799,6 +6791,9 @@ export class View {
   }
 
   _onTurnChanged(ev) {
+    this._hideActionBanner();
+    this._discardBanner = null;
+    this._bonus2Banner = null;
     this._stopHpBlink();
     this.attackOverrides.clear();
     this._pendingDeathAfterAttack = null;
@@ -5821,6 +6816,7 @@ export class View {
   // ==========================================================
 
   _showVictory(winner) {
+    this._hideActionBanner();
     this.queuedRevives.length = 0;
     this.revivingIds.clear();
     this.attackOverrides.clear();
@@ -5872,6 +6868,7 @@ export class View {
       o.sprite.material.dispose();
     }
     this.powerOrbs.length = 0;
+    this._pendingMightLoss = { white: 0, black: 0 };
     if (this.refs.endTurnBtn) this.refs.endTurnBtn.disabled = true;
 
     const overlay = this.refs.victoryOverlay;
@@ -5879,7 +6876,7 @@ export class View {
     const title = overlay.querySelector('.victory-title');
     panel.classList.remove('white-team', 'black-team');
     panel.classList.add(winner === 'white' ? 'white-team' : 'black-team');
-    title.textContent = winner === 'white' ? '🏆 Победа белых!' : '🏆 Победа чёрных!';
+    title.textContent = '🏆 Победа ' + this._sideGenitive(winner) + '!';
 
     document.getElementById('victory-restart').onclick = () => {
       if (window.restartWithShuffle) window.restartWithShuffle();
@@ -6310,6 +7307,451 @@ export class View {
   // ОСНОВНОЙ ЦИКЛ
   // ==========================================================
 
+  // ★ Плавно перекрашивает ореол вокруг доски в цвет активной команды.
+  //   Меняется только material.color плоскости-ореола — поле, жетоны,
+  //   звёзды и космос не затрагиваются. Прозрачность даёт текстура,
+  //   цвет умножается на неё при аддитивном смешивании.
+  _updateAmbientTint(dt, pulsePhase) {
+    if (!this.game || !this.auraPlane) return;
+
+    let target = AMBIENT_TINT.neutral;
+    if (!this.game.gameOver) {
+      target = this.game.currentTurn === 'white'
+        ? AMBIENT_TINT.white
+        : AMBIENT_TINT.black;
+    }
+
+    // Лёгкая пульсация 0.85..1.00 в такт общей --pulse.
+    const pulse = 0.85 + 0.15 * (pulsePhase || 0);
+
+    // dt-aware экспоненциальное сглаживание: цвет приходит к цели
+    // примерно за 2 секунды, вне зависимости от FPS.
+    const k = 1 - Math.exp(-dt * 1.8);
+    const c = this.auraPlane.material.color;
+    c.r += (target.r * pulse - c.r) * k;
+    c.g += (target.g * pulse - c.g) * k;
+    c.b += (target.b * pulse - c.b) * k;
+  }
+
+  // ==========================================================
+  // ПЛАШКА ДЕЙСТВИЙ ОППОНЕНТА (мультиплеер)
+  // ==========================================================
+
+  // ★ Точка входа. Вызывается из net.onAction после playEvents.
+  //   Действует только в мультиплеере (this.mySide != null) и только
+  //   когда действовал оппонент.
+  _handleActionBanner(events) {
+    if (!this.mySide) return;          // одиночная игра — плашки не нужны
+    if (!events || !events.length) return;
+
+    const actor = this._eventActorSide(events);
+    if (!actor) return;                // событие без явного действующего
+    if (actor === this.mySide) return; // это моё действие — не показываем
+
+    // ★ Ручной сброс карт — накопительная плашка. Каждый сброс
+    //   приходит отдельной пачкой events (одна карта). Если игрок
+    //   сбрасывает подряд несколько, копим их в одну плашку.
+    const discards = events.filter(e => e.kind === 'cardDiscarded');
+    if (discards.length > 0) {
+      if (!this._discardBanner || this._discardBanner.side !== actor) {
+        this._discardBanner = { side: actor, cards: [] };
+      }
+      discards.forEach(e => {
+        if (e.card) this._discardBanner.cards.push(e.card);
+      });
+      if (this._discardBanner.cards.length > 4) {
+        this._discardBanner.cards = this._discardBanner.cards.slice(-4);
+      }
+      this._showDiscardBanner();
+      return;
+    }
+    // Любое не-сбрасывающее действие сбрасывает накопитель сброса.
+    this._discardBanner = null;
+
+    // ★ Бонус второй локации — особая логика: плашка обновляется
+    //   в три этапа. Сервер присылает события по отдельности:
+    //   сначала locationBonus2Started (вскрытие), потом по одному
+    //   locationBonus2Resolved (Вернуть/Сбросить на каждой карте).
+    const started2 = events.find(e => e.kind === 'locationBonus2Started');
+    if (started2) {
+      this._bonus2Banner = {
+        side: actor,
+        total: (started2.cards && started2.cards.length) || 0,
+        results: [],
+      };
+      this._showBonus2Banner();
+      return;
+    }
+
+    const resolved2 = events.find(e => e.kind === 'locationBonus2Resolved');
+    if (resolved2 && this._bonus2Banner && this._bonus2Banner.side === actor) {
+      this._bonus2Banner.results.push({
+        action: resolved2.action,
+        card: resolved2.card,
+      });
+      this._showBonus2Banner();
+      return;
+    }
+
+    const info = this._describeAction(events, actor);
+    if (info) this._showActionBanner(info);
+  }
+
+  // ★ Плашка ручного сброса. Рисуется по накопленному
+  //   this._discardBanner. Пока в накопителе одна карта — «Вася
+  //   сбрасывает [карта] в конце хода». После второго сброса —
+  //   «Вася сбрасывает [карта] [карта] в конце хода» и так далее,
+  //   до 4 карт. Левый кружок плашки пустой — там будет аватарка
+  //   игрока (в отличие от бонусов, тут не персонаж действует).
+  _showDiscardBanner() {
+    const state = this._discardBanner;
+    if (!state) return;
+    const nick = this.playerNames[state.side]
+      || (state.side === 'white' ? 'Белые' : 'Чёрные');
+    const segs = [{ text: `${nick} сбрасывает ` }];
+    state.cards.forEach(c => segs.push({ card: c }));
+    segs.push({ text: ' в конце хода' });
+    this._showActionBanner({
+      side: state.side,
+      charKey: null,
+      title: segs,
+    });
+  }
+
+  // ★ Плашка бонуса второй локации. Рисуется по накопленному
+  //   this._bonus2Banner. Пока результатов нет — показывает
+  //   «Вскрыто N карт из колоды». После каждого resolve — добавляет
+  //   «Вернул в колоду [карта]» или «Сбросил [карта]», склеивая
+  //   результаты через ' и '.
+  _showBonus2Banner() {
+    const state = this._bonus2Banner;
+    if (!state) return;
+    const nick = this.playerNames[state.side]
+      || (state.side === 'white' ? 'Белые' : 'Чёрные');
+
+    // detail-сегменты — тот же формат, что и в _showActionBanner:
+    // { text } / { card } вперемешку.
+    const detail = [];
+    if (state.results.length === 0) {
+      detail.push({ text: `Вскрыто ${state.total} карт из колоды` });
+    } else {
+      state.results.forEach((r, i) => {
+        if (i > 0) detail.push({ text: ' и ' });
+        detail.push({
+          text: r.action === 'return' ? 'Вернул в колоду ' : 'Сбросил ',
+        });
+        if (r.card) detail.push({ card: r.card });
+      });
+    }
+
+    this._showActionBanner({
+      side: state.side,
+      charKey: null,
+      title: `${nick} использует бонус второй локации`,
+      detail,
+    });
+  }
+
+  // ★ Аккуратно вытаскивает сторону-исполнителя из пачки событий.
+  _eventActorSide(events) {
+    for (const ev of events) {
+      if (ev.side === 'white' || ev.side === 'black') return ev.side;
+      if (ev.kind === 'pieceMoved' || ev.kind === 'pieceDied') {
+        const p = this.game.getPiece(ev.pieceId);
+        if (p) return p.side;
+      }
+      if (ev.kind === 'attackResolved') {
+        const p = this.game.getPiece(ev.attackerId);
+        if (p) return p.side;
+      }
+      if (ev.kind === 'mirrorAttached' || ev.kind === 'mirrorUsed'
+          || ev.kind === 'mirrorDropped') {
+        const p = this.game.getPiece(ev.ownerId);
+        if (p) return p.side;
+      }
+    }
+    return null;
+  }
+
+
+  // ★ Собирает из пачки событий «что именно произошло».
+  _describeAction(events, actor) {
+    const label = (cellId) =>
+      (typeof cellId === 'number' && CELL_LABELS[cellId]) || ('#' + cellId);
+    const find = (kind) => events.find(e => e.kind === kind);
+    const nick = this.playerNames[actor]
+      || (actor === 'white' ? 'Белые' : 'Чёрные');
+
+    // ─── Бонус 1: сброс карты и добор новой ───
+    const loc1 = find('locationBonus1Applied');
+    if (loc1) {
+      const detail = [{ text: 'Сбросил ' }];
+      if (loc1.discarded) detail.push({ card: loc1.discarded });
+      detail.push({ text: ' и взял из колоды ' });
+      if (loc1.drawn) detail.push({ card: loc1.drawn });
+      else detail.push({ text: '(пусто)' });
+      return {
+        side: actor,
+        charKey: null,
+        title: `${nick} использовал бонус первой локации`,
+        detail,
+      };
+    }
+
+    // ─── Бонус 4: сброс из руки, добор из сброса ───
+    const loc4 = find('locationBonus4Applied');
+    if (loc4) {
+      const detail = [{ text: 'Сбросил ' }];
+      if (loc4.handCard) detail.push({ card: loc4.handCard });
+      detail.push({ text: ' и взял из сброса ' });
+      if (loc4.discardCard) detail.push({ card: loc4.discardCard });
+      return {
+        side: actor,
+        charKey: null,
+        title: `${nick} использовал бонус четвёртой локации`,
+        detail,
+      };
+    }
+
+    // ─── Бонус 5: телепорт ───
+    const loc5 = find('locationBonus5Applied');
+    if (loc5) {
+      const p = this.game.getPiece(loc5.pieceId);
+      const detail = [];
+      if (p) detail.push({ piece: p });
+      detail.push({ text: ' переместился ' });
+      detail.push({ text: `${label(loc5.fromCell)} → ${label(loc5.toCell)}` });
+      return {
+        side: actor,
+        charKey: null,
+        title: `${nick} использовал бонус пятой локации`,
+        detail,
+      };
+    }
+
+    // ─── Бонус 2: вскрытие карт ───
+    const loc2 = find('locationBonus2Started');
+    if (loc2) {
+      const n = (loc2.cards && loc2.cards.length) || 0;
+      return {
+        side: actor,
+        charKey: null,
+        title: `${nick} использовал бонус второй локации`,
+        detail: `Вскрыто ${n} карт из колоды`,
+      };
+    }
+
+
+    // ─── Активация зерцала ───
+    // ★ Карта вынесена в mainCard — рисуется крупно слева от обеих
+    //   строк, а не встроена в заголовок.
+    const mirrorUsed = find('mirrorUsed');
+    if (mirrorUsed) {
+      const p = this.game.getPiece(mirrorUsed.ownerId);
+      return {
+        side: actor,
+        charKey: p?.profileKey || null,
+        mainCard: mirrorUsed.card || null,
+        title: 'применил способность',
+      };
+    }
+
+    // ─── Розыгрыш карты: различаем по «спутнику» ───
+    const played = find('cardPlayed');
+    if (played) {
+      const card = played.card || {};
+      const base = {
+        side: actor,
+        charKey: card.charKey || null,
+        mainCard: card,
+      };
+
+      // Передвижение
+      const moved = find('pieceMoved');
+      if (moved) {
+        const path = moved.path || [];
+        const pathStr = path.map(c => label(c)).join(' → ');
+        return {
+          ...base,
+          title: 'передвинулся',
+          detail: pathStr,
+        };
+      }
+
+      // Атака: (A1) атаковал (кружок) (A2) / ниже — сердечки
+      const attack = find('attackResolved');
+      if (attack) {
+        const atkPiece = this.game.getPiece(attack.attackerId);
+        const tgtPiece = this.game.getPiece(attack.targetId);
+        const atkCell = atkPiece ? label(atkPiece.cellId) : '?';
+        const tgtCell = tgtPiece ? label(tgtPiece.cellId) : '?';
+        const title = [{ text: `(${atkCell}) атаковал ` }];
+        if (tgtPiece) title.push({ piece: tgtPiece });
+        title.push({ text: ` (${tgtCell})` });
+        return {
+          ...base,
+          title,
+          detail: [{
+            hearts: {
+              hpBefore: attack.hpBefore,
+              hpAfter: attack.hpAfter,
+              maxHp: attack.maxHpBefore,
+            },
+          }],
+        };
+      }
+
+      // Исследование базы
+      const explore = find('exploreResolved');
+      if (explore) {
+        return {
+          ...base,
+          title: 'исследовал базу противника',
+        };
+      }
+
+      // Заклинание
+      const spell = find('spellResolved');
+      if (spell) {
+        return {
+          ...base,
+          title: 'применил способность',
+        };
+      }
+
+      // Передача карты в зерцало
+      const mirrorAtt = find('mirrorAttached');
+      if (mirrorAtt) {
+        return {
+          ...base,
+          title: 'взял карту в зерцало',
+        };
+      }
+
+      // Фолбэк
+      return {
+        ...base,
+        title: 'сыграл карту',
+      };
+    }
+
+    return null;
+  }
+
+  // ★ Рисует плашку. info:
+  //     { side, charKey, mainCard?, title, detail }
+  //   mainCard — крупная карта слева от обеих строк текста.
+  //   title и detail могут быть:
+  //     - строкой,
+  //     - массивом сегментов { text } / { card } / { piece } / { hearts }.
+  _showActionBanner(info) {
+    const el = this.refs && this.refs.actionBanner;
+    if (!el) return;
+
+    el.classList.remove('white-team', 'black-team', 'hidden');
+    el.classList.add(info.side === 'white' ? 'white-team' : 'black-team');
+
+    el.innerHTML = '';
+
+    // ── Левый кружок ──
+    //   charKey задан → портрет персонажа.
+    //   charKey = null → пустой кружок (заготовка под аватарку игрока).
+    const portrait = document.createElement('div');
+    portrait.className = 'ab-portrait';
+    const prof = info.charKey && PROFILES[info.charKey];
+    if (prof && prof.sprite) {
+      portrait.style.backgroundImage = `url('${prof.sprite}')`;
+    }
+    el.appendChild(portrait);
+
+    // ── Крупная карта слева от обеих строк ──
+    //   Стоит отдельным блоком между портретом и текстом, по высоте —
+    //   на всю плашку. Именно она — визуальный «якорь» действия.
+    if (info.mainCard) {
+      const cardEl = document.createElement('div');
+      cardEl.className = 'ab-main-card';
+      const img = document.createElement('img');
+      img.src = info.mainCard.imgPath;
+      img.onerror = () => img.remove();
+      cardEl.appendChild(img);
+      el.appendChild(cardEl);
+    }
+
+    // ── Текст ──
+    const content = document.createElement('div');
+    content.className = 'ab-content';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'ab-title';
+    this._fillBannerSegments(titleEl, info.title);
+    content.appendChild(titleEl);
+
+    if (info.detail != null && info.detail !== '') {
+      const detailEl = document.createElement('div');
+      detailEl.className = 'ab-detail';
+      this._fillBannerSegments(detailEl, info.detail);
+      content.appendChild(detailEl);
+    }
+    el.appendChild(content);
+
+    // ── Перезапуск анимации появления ──
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = '';
+  }
+
+  // ★ Раскладывает строку или массив сегментов в DOM-узел.
+  //   Сегменты:
+  //     { text: "..." }        — простой текст
+  //     { card: cardObj }      — мини-карта (inline)
+  //     { piece: pieceObj }    — круглый портрет персонажа (inline)
+  //     { hearts: {...} }      — сердечки «до → после»
+  _fillBannerSegments(parentEl, segments) {
+    if (segments == null) return;
+    if (typeof segments === 'string') {
+      parentEl.textContent = segments;
+      return;
+    }
+    if (!Array.isArray(segments)) return;
+    for (const seg of segments) {
+      if (seg.text != null) {
+        parentEl.appendChild(document.createTextNode(seg.text));
+      } else if (seg.card) {
+        const wrap = document.createElement('span');
+        wrap.className = 'ab-detail-card';
+        const img = document.createElement('img');
+        img.src = seg.card.imgPath;
+        img.onerror = () => img.remove();
+        wrap.appendChild(img);
+        parentEl.appendChild(wrap);
+      } else if (seg.piece) {
+        const wrap = document.createElement('span');
+        wrap.className = 'ab-detail-piece';
+        const prof = PROFILES[seg.piece.profileKey];
+        if (prof && prof.sprite) {
+          wrap.style.backgroundImage = `url('${prof.sprite}')`;
+        }
+        parentEl.appendChild(wrap);
+      } else if (seg.hearts) {
+        const wrap = document.createElement('span');
+        wrap.className = 'ab-detail-hearts';
+        const before = document.createElement('canvas');
+        before.className = 'ab-hearts-canvas';
+        const arrow = document.createElement('span');
+        arrow.className = 'ab-hearts-arrow';
+        arrow.textContent = '→';
+        const after = document.createElement('canvas');
+        after.className = 'ab-hearts-canvas';
+        drawHpBar(before, seg.hearts.hpBefore, seg.hearts.maxHp, { tightFit: true });
+        drawHpBar(after,  seg.hearts.hpAfter,  seg.hearts.maxHp, { tightFit: true });
+        wrap.appendChild(before);
+        wrap.appendChild(arrow);
+        wrap.appendChild(after);
+        parentEl.appendChild(wrap);
+      }
+    }
+  }
+
   _startRenderLoop() {
     const clock = new THREE.Clock();
     let firstFrame = true;
@@ -6344,6 +7786,20 @@ export class View {
       if (this.stars) this.stars.rotation.y = t * 0.01;
       if (this.floatGroup) this.floatGroup.position.y = Math.sin(t * 0.8) * 0.05;
 
+      // ★ Единый такт пульсации для всего интерфейса. Одна фаза 0..1
+      //   на кадр — обновляем CSS-переменную --pulse на <html>.
+      //   Её читают все «живые» элементы: кнопки действий, кнопки
+      //   бонусов локаций, подсветка активной руки. Тут же значение
+      //   переиспользуется для 3D-свечения зерцал (см. ниже), поэтому
+      //   весь визуальный «ритм доступного действия» в игре един.
+      //   Период MIRROR_PULSE_PERIOD = 1.6 с — совпадает с прежними
+      //   @keyframes btnPulse / lbPulse / handPulse.
+      const pulsePhase = 0.5 - 0.5 * Math.cos((t / MIRROR_PULSE_PERIOD) * Math.PI * 2);
+      document.documentElement.style.setProperty('--pulse', pulsePhase.toFixed(4));
+
+      // ★ Космос подкрашивается в цвет активной команды.
+      this._updateAmbientTint(dt, pulsePhase);
+	  
       for (const [, entry] of this.pieceMeshes.entries()) {
         const sel = entry.mesh.children[4];
         if (sel && sel.visible) {
@@ -6369,14 +7825,21 @@ export class View {
         if (s.redraw) s.redraw();
       }
 
+      // ★ Пробегающий блик по зерцалам. Каждые MIRROR_SHIMMER_INTERVAL
+      //   секунд по плоскости проезжает яркая диагональная полоса —
+      //   за счёт сдвига map.offset.x от -1 до +1. Фаза у каждого
+      //   зерцала своя (была рандомизирована при создании), поэтому
+      //   поле не мигает синхронно, а живёт «россыпью».
       for (const [, m] of this.mirrorMeshes.entries()) {
         if (m.shimmer.userData.disabled) { m.shimmer.material.opacity = 0; continue; }
         const local = (t + m.shimmer.userData.phaseOffset) % MIRROR_SHIMMER_INTERVAL;
         if (local < MIRROR_SHIMMER_DURATION) {
           const frac = local / MIRROR_SHIMMER_DURATION;
-          m.shimmer.material.opacity = Math.sin(frac * Math.PI) * 0.95;
+          m.shimmer.material.opacity = Math.sin(frac * Math.PI) * 0.25;
           m.shimmer.material.map.offset.x = -1 + frac * 2;
-        } else m.shimmer.material.opacity = 0;
+        } else {
+          m.shimmer.material.opacity = 0;
+        }
       }
 
       this._updateHpBlink(dt);
@@ -6399,22 +7862,24 @@ export class View {
         }
       }
 
-      if (this.game) {
-        this._projectLocationBonusButtons();
-        if (this.revealCardElements.length > 0 && this.game.revealState.active) {
-          this._positionRevealCards(this.game.revealState.side);
-        }
-      }
-
       if (this.refs && this.refs.endTurnBtn) {
+        const notMyTurn = !!this.mySide
+          && this.game && this.game.currentTurn !== this.mySide;
         const blocked = !!this.animating
-          || !!(this.game && this.game.gameOver);
+          || !!(this.game && this.game.gameOver)
+          || notMyTurn;
 
-        this.refs.endTurnBtn.disabled = blocked;
+        if (this._lastEndTurnBlocked !== blocked) {
+          this._lastEndTurnBlocked = blocked;
+          this.refs.endTurnBtn.disabled = blocked;
+        }
 
         const lockedLook = !!(this.game && (this.ui.discardMode
                                          || this.ui.discardLocked));
-        this.refs.endTurnBtn.classList.toggle('end-turn-locked', lockedLook);
+        if (this._lastEndTurnLockedLook !== lockedLook) {
+          this._lastEndTurnLockedLook = lockedLook;
+          this.refs.endTurnBtn.classList.toggle('end-turn-locked', lockedLook);
+        }
       }
 
       this.renderer.render(this.scene, this.camera);
