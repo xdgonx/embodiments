@@ -7880,6 +7880,17 @@ _animateMove(ev) {
         }
       }
 
+      // ★ Инвариант «в наш ход плашки чужого действия быть не должно».
+      //   Проверяется каждый кадр, независимо от очереди анимаций
+      //   и блокирующих событий. Единственное место, которое сработает
+      //   даже если turnChanged застрял в очереди навсегда.
+      if (this.refs && this.refs.actionBanner
+          && this.mySide && this.game
+          && this.game.currentTurn === this.mySide
+          && !this.refs.actionBanner.classList.contains('hidden')) {
+        this._hideActionBanner();
+      }
+
       if (this.refs && this.refs.endTurnBtn) {
         const notMyTurn = !!this.mySide
           && this.game && this.game.currentTurn !== this.mySide;
